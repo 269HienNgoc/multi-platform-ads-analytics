@@ -9,14 +9,19 @@ import (
 
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/domain"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/workflow"
+	"go.uber.org/zap"
 )
 
 type Server struct {
 	workflows *workflow.Service
+	logger    *zap.Logger
 }
 
-func NewServer(workflows *workflow.Service) *Server {
-	return &Server{workflows: workflows}
+func NewServer(workflows *workflow.Service, logger *zap.Logger) *Server {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &Server{workflows: workflows, logger: logger}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -26,7 +31,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workflows/bulk", s.createBulkWorkflows)
 	mux.HandleFunc("POST /api/v1/workflows/{id}/transition", s.transitionWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/{id}/metrics", s.applyMetrics)
-	return withCORS(mux)
+	return s.withRequestLogging(withCORS(mux))
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -112,5 +117,32 @@ func withCORS(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (s *Server) withRequestLogging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
+		next.ServeHTTP(recorder, r)
+
+		s.logger.Info("http request",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status", recorder.status),
+			zap.Duration("duration", time.Since(started)),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
 	})
 }
