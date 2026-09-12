@@ -1,0 +1,30 @@
+app:
+  name: multi-platform-ads-analytics
+  environment: development
+
+server:
+  address: ":8080"
+  read_header_timeout_seconds: 10
+  shutdown_timeout_seconds: 10
+
+database:
+  dsn: "postgres://ads:ads@localhost:5432/ads?sslmode=disable"
+
+redis:
+  address: "localhost:6379"
+  password: ""
+  database: 0
+
+meta:
+  graph_base_url: "https://graph.facebook.com"
+  graph_version: "v23.0"
+  access_token: ""
+
+logging:
+  level: debug
+  encoding: console
+  development: true
+  output_paths:
+    - stdout
+  error_output_paths:
+    - stderr
