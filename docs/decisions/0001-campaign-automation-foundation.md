@@ -20,6 +20,7 @@ The repository already establishes Go as the backend language, PostgreSQL as the
 6. Keep PostgreSQL as the durable source of truth; Redis is reserved for cache/queue coordination, not canonical state.
 7. Use Next.js for the operator dashboard.
 8. AI produces proposals; deterministic validation/rules execute publish, pause and budget actions.
+9. Backend runtime configuration and logging conventions are defined separately in ADR 0002.
 
 ## Consequences
 
