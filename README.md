@@ -1,36 +1,59 @@
-# Multi-Platform Ads Analytics
+# Multi-Platform Ads Analytics & Automation
 
-Canonical advertising analytics platform for synchronizing, normalizing, and analyzing advertising data across Meta Ads, TikTok Ads, Google Ads, and future platforms.
+Canonical advertising analytics and campaign-automation platform for synchronizing, normalizing, managing and analyzing advertising activity across Meta Ads, TikTok Ads, Google Ads and future platforms.
 
-## Core architecture principles
+## Current foundation
 
-- Normalized core data model.
-- Historical configuration and performance data.
-- Raw API payload retention.
-- Platform-specific JSONB extensions.
-- Business and CRM context.
-- AI-ready analytics layer exposed through REST API and MCP.
+The first campaign-automation slice now contains:
+
+- Go REST API with multi-account bulk workflow creation.
+- Provider-neutral advertising platform contract and initial Meta adapter boundary.
+- Seed -> main campaign state machine.
+- Rule evaluator with minimum spend/sample safety gates.
+- PostgreSQL schema for accounts, pages, tracking, workflows, rules, metrics, batches and audits.
+- Next.js operator dashboard for bulk account workflow creation and state monitoring.
+- Docker Compose development environment with PostgreSQL and Redis.
+- Architecture/ERD documentation.
 
 ## Repository layout
 
-- `backend/` — Go backend services, APIs, workers, connectors, and data access.
-- `frontend/` — analytics dashboard frontend.
-- `docs/` — architecture, canonical model, API references, and ADRs.
+- `backend/` — Go backend services, APIs, workers/connectors and database migrations.
+- `frontend/` — Next.js automation/analytics dashboard.
+- `docs/` — architecture, canonical model, API references and ADRs.
 - `.codex/skills/` — project-specific AI engineering skills.
-- `deploy/` — deployment and infrastructure assets.
+- `deploy/` — Docker/deployment assets.
 - `scripts/` — development and operational scripts.
 
+## Local development
+
+Backend:
+
+```bash
+cd backend
+go test ./...
+go run ./cmd/api
+```
+
+Frontend:
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
+Or start the development stack:
+
+```bash
+cd deploy
+docker compose up --build
+```
+
+Dashboard: `http://localhost:3000`  
+API: `http://localhost:8080`
+
 ## Branch strategy
-
-### `main`
-
-Production branch. Only code that has passed validation in `dev` should be merged into `main`. Production deployment is sourced from this branch.
-
-### `dev`
-
-Integration and localhost testing branch. Feature and fix branches merge into `dev` first. After local/integration testing succeeds, `dev` is merged into `main`.
-
-Recommended flow:
 
 ```text
 feature/* or fix/*
@@ -43,3 +66,5 @@ feature/* or fix/*
         ↓
    production
 ```
+
+Feature development should not be committed directly to `main`.
