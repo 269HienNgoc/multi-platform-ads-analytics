@@ -11,7 +11,9 @@
 # Go
 bin/
 coverage.out
+coverage.html
 *.test
+vendor/
 
 # Node / frontend
 node_modules/
@@ -23,6 +25,14 @@ coverage/
 *.log
 tmp/
 temp/
+
+# Secrets and credentials
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
 
 # Local database / tooling
 *.db
