@@ -16,6 +16,25 @@ Multi-Platform Advertising Analytics & AI Dashboard.
 - APIs must be suitable for REST consumers and AI/MCP analytics.
 - Sync workers must be idempotent, resumable, observable, and rate-limit aware.
 
+## Required Go skills
+
+For any change under `backend/`, load `.codex/skills/golang-how-to/SKILL.md` first and then the relevant Go companion skills.
+
+Common routing:
+
+- Go implementation/review: `golang-code-style`, `golang-naming`, `golang-safety`.
+- Errors: `golang-error-handling`.
+- Workers/goroutines: `golang-concurrency` + `golang-context`.
+- PostgreSQL/repositories/migrations: `golang-database` + `golang-security`.
+- Types/adapters/architecture: `golang-structs-interfaces` + `golang-design-patterns`.
+- Zap/logging/metrics: `golang-observability`.
+- Tests/debugging: `golang-testing`, `golang-troubleshooting`.
+- Tooling/CI: `golang-lint`, `golang-dependency-management`, `golang-continuous-integration`.
+- Layout/refactoring: `golang-project-layout`, `golang-modernize`, `golang-gopls`.
+- REST documentation: `golang-swagger`, `golang-documentation`.
+
+Project-specific conventions override generic skill advice: Go 1.24, YAML config, Zap logging, PostgreSQL system of record, native VPS deployment, and no Docker.
+
 ## Branch policy
 
 - `main`: production branch and production deployment source.
