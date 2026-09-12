@@ -8,7 +8,10 @@ server:
   shutdown_timeout_seconds: 10
 
 database:
-  dsn: "postgres://ads:ads@localhost:5432/ads?sslmode=disable"
+  # VPS deployment: when PostgreSQL runs on the same VPS as the backend,
+  # connect through loopback instead of exposing PostgreSQL port 5432 publicly.
+  # Replace DB_USER, DB_PASSWORD and DB_NAME in config.yaml on the VPS.
+  dsn: "postgres://DB_USER:DB_PASSWORD@127.0.0.1:5432/DB_NAME?sslmode=disable"
 
 redis:
   address: "localhost:6379"
