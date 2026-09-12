@@ -18,8 +18,12 @@ jobs:
         with:
           go-version: "1.24.x"
           cache-dependency-path: backend/go.mod
-      - name: Download modules
-        run: go mod download
+      - name: Prepare modules
+        run: |
+          go mod tidy
+          echo '--- GENERATED GO.SUM ---'
+          cat go.sum
+          echo '--- END GO.SUM ---'
       - name: Test
         run: go test ./...
 
