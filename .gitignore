@@ -8,6 +8,10 @@
 .env.*
 !.env.example
 
+# Backend local config / secrets
+backend/config/config.yaml
+backend/config/*.local.yaml
+
 # Go
 bin/
 coverage.out

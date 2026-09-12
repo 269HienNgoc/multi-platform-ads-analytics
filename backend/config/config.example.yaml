@@ -1,0 +1,33 @@
+app:
+  name: multi-platform-ads-analytics
+  environment: development
+
+server:
+  address: ":8080"
+  read_header_timeout_seconds: 10
+  shutdown_timeout_seconds: 10
+
+database:
+  # VPS deployment: when PostgreSQL runs on the same VPS as the backend,
+  # connect through loopback instead of exposing PostgreSQL port 5432 publicly.
+  # Replace DB_USER, DB_PASSWORD and DB_NAME in config.yaml on the VPS.
+  dsn: "postgres://DB_USER:DB_PASSWORD@127.0.0.1:5432/DB_NAME?sslmode=disable"
+
+redis:
+  address: "localhost:6379"
+  password: ""
+  database: 0
+
+meta:
+  graph_base_url: "https://graph.facebook.com"
+  graph_version: "v23.0"
+  access_token: ""
+
+logging:
+  level: debug
+  encoding: console
+  development: true
+  output_paths:
+    - stdout
+  error_output_paths:
+    - stderr
