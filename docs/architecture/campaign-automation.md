@@ -76,6 +76,23 @@ erDiagram
     ORGANIZATION ||--o{ AUDIT_LOG : audits
 ```
 
+## Backend runtime conventions
+
+The backend runs as a native Go process. Docker is not part of the project runtime or local-development workflow.
+
+Runtime configuration is loaded from YAML through the `-config` flag. A checked-in example lives at `backend/config/config.example.yaml`; real environment configuration such as `backend/config/config.yaml` is excluded from Git.
+
+Configuration groups are intentionally explicit:
+
+- `app` — service name and environment.
+- `server` — listen address and HTTP timeouts.
+- `database` — PostgreSQL DSN.
+- `redis` — Redis connection settings.
+- `meta` — Graph API endpoint/version and credential placeholder.
+- `logging` — Zap level, encoder and output paths.
+
+Application logging uses Zap. Lifecycle and HTTP access logs are structured and include fields rather than formatted free-text strings. Production should normally use JSON encoding; local development can use console encoding.
+
 ## Safety and execution boundaries
 
 AI may propose targeting, copy, creatives and campaign configuration. Deterministic code must validate and execute money-impacting operations. Budget changes, pauses and publishing should go through configured rules, limits and audit logs.
