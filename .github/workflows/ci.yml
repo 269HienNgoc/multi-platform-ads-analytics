@@ -17,13 +17,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
-          cache-dependency-path: backend/go.mod
-      - name: Prepare modules
-        run: |
-          go mod tidy
-          echo '--- GENERATED GO.SUM ---'
-          cat go.sum
-          echo '--- END GO.SUM ---'
+          cache-dependency-path: backend/go.sum
+      - name: Download modules
+        run: go mod download
       - name: Test
         run: go test ./...
 
