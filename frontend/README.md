@@ -18,3 +18,5 @@ The first dashboard slice includes:
 - Per-account workflow state table.
 - Seed spend-limit configuration.
 - Pixel/event/post fields that will later be populated from synced platform assets.
+
+This project intentionally does not use Docker. Run the Next.js app directly with Node.js/npm or deploy its build output using the target environment's native process manager/platform.
