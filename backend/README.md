@@ -16,7 +16,7 @@ Go backend for the multi-platform advertising analytics and campaign automation 
 
 ## Configuration
 
-Backend runtime configuration is YAML. Copy the example file and keep the real local config uncommitted:
+Backend runtime configuration is YAML. Copy the example file and keep the real config uncommitted:
 
 ```bash
 cd backend
@@ -32,7 +32,7 @@ server:
   address: ":8080"
 
 database:
-  dsn: "postgres://ads:ads@localhost:5432/ads?sslmode=disable"
+  dsn: "postgres://DB_USER:DB_PASSWORD@127.0.0.1:5432/DB_NAME?sslmode=disable"
 
 redis:
   address: "localhost:6379"
@@ -48,9 +48,22 @@ logging:
   development: true
 ```
 
+### PostgreSQL on the VPS
+
+When the Go backend and PostgreSQL run on the same VPS, keep PostgreSQL bound to the VPS itself and connect through loopback:
+
+```yaml
+database:
+  dsn: "postgres://YOUR_DB_USER:YOUR_DB_PASSWORD@127.0.0.1:5432/YOUR_DB_NAME?sslmode=disable"
+```
+
+Replace `YOUR_DB_USER`, `YOUR_DB_PASSWORD` and `YOUR_DB_NAME` with the PostgreSQL account and database created on the VPS. The real `config/config.yaml` is ignored by Git and must not be committed because it can contain database passwords and platform access tokens.
+
+If PostgreSQL is hosted on a different server or managed database service, replace `127.0.0.1` with its private IP/DNS name and use the SSL mode required by that database provider.
+
 For production, prefer `logging.encoding: json` and `logging.development: false`.
 
-## Run locally
+## Run locally or on the VPS
 
 PostgreSQL and Redis should be installed/running directly on the host or supplied as external services. This project does not use Docker.
 
@@ -61,7 +74,7 @@ go test ./...
 go run ./cmd/api -config ./config/config.yaml
 ```
 
-API defaults to `http://localhost:8080` when the example configuration is used.
+API defaults to port `8080` when the example configuration is used.
 
 ### Useful endpoints
 
