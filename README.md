@@ -11,9 +11,20 @@ The first campaign-automation slice now contains:
 - Seed -> main campaign state machine.
 - Rule evaluator with minimum spend/sample safety gates.
 - PostgreSQL schema for accounts, pages, tracking, workflows, rules, metrics, batches and audits.
+- YAML-based backend configuration.
+- Zap structured logging.
 - Next.js operator dashboard for bulk account workflow creation and state monitoring.
-- Docker Compose development environment with PostgreSQL and Redis.
 - Architecture/ERD documentation.
+
+## Runtime conventions
+
+- Backend: Go.
+- Frontend: Next.js.
+- System of record: PostgreSQL.
+- Queue/cache coordination: Redis.
+- Backend configuration: YAML files.
+- Backend logging: Zap.
+- Docker is intentionally not used by this project.
 
 ## Repository layout
 
@@ -21,7 +32,7 @@ The first campaign-automation slice now contains:
 - `frontend/` — Next.js automation/analytics dashboard.
 - `docs/` — architecture, canonical model, API references and ADRs.
 - `.codex/skills/` — project-specific AI engineering skills.
-- `deploy/` — Docker/deployment assets.
+- `deploy/` — native deployment/infrastructure notes and service-manager configuration.
 - `scripts/` — development and operational scripts.
 
 ## Local development
@@ -30,8 +41,11 @@ Backend:
 
 ```bash
 cd backend
+cp config/config.example.yaml config/config.yaml
+# Edit config/config.yaml for local PostgreSQL, Redis and Meta settings.
+go mod download
 go test ./...
-go run ./cmd/api
+go run ./cmd/api -config ./config/config.yaml
 ```
 
 Frontend:
@@ -43,12 +57,7 @@ npm install
 npm run dev
 ```
 
-Or start the development stack:
-
-```bash
-cd deploy
-docker compose up --build
-```
+PostgreSQL and Redis must be available locally or through external services configured in `backend/config/config.yaml`.
 
 Dashboard: `http://localhost:3000`  
 API: `http://localhost:8080`
