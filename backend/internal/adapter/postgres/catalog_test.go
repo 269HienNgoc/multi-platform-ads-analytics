@@ -35,8 +35,8 @@ func TestUnmarshalProviderData(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		input       json.RawMessage
+		name         string
+		input        json.RawMessage
 		expectsError bool
 	}{
 		{name: "empty", input: nil},

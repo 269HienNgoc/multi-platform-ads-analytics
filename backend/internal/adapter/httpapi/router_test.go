@@ -155,10 +155,10 @@ func TestCatalogRoutes(t *testing.T) {
 		expectedStatus int
 	}{
 		{
-			name: "create account",
+			name:   "create account",
 			method: http.MethodPost,
-			path: "/api/v1/ad-accounts",
-			body: `{"platform":"meta","external_id":"act_123","name":"Main","currency":"USD","timezone":"UTC","status":"active"}`,
+			path:   "/api/v1/ad-accounts",
+			body:   `{"platform":"meta","external_id":"act_123","name":"Main","currency":"USD","timezone":"UTC","status":"active"}`,
 			service: catalogServiceStub{createAccountFn: func(_ context.Context, account ads.AdAccount) (ads.AdAccount, error) {
 				account.ID = "account-id"
 
@@ -167,26 +167,26 @@ func TestCatalogRoutes(t *testing.T) {
 			expectedStatus: http.StatusCreated,
 		},
 		{
-			name: "invalid json",
-			method: http.MethodPost,
-			path: "/api/v1/ad-accounts",
-			body: `{`,
+			name:           "invalid json",
+			method:         http.MethodPost,
+			path:           "/api/v1/ad-accounts",
+			body:           `{`,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name: "duplicate account",
+			name:   "duplicate account",
 			method: http.MethodPost,
-			path: "/api/v1/ad-accounts",
-			body: `{"platform":"meta","external_id":"act_123","name":"Main","currency":"USD","timezone":"UTC","status":"active"}`,
+			path:   "/api/v1/ad-accounts",
+			body:   `{"platform":"meta","external_id":"act_123","name":"Main","currency":"USD","timezone":"UTC","status":"active"}`,
 			service: catalogServiceStub{createAccountFn: func(context.Context, ads.AdAccount) (ads.AdAccount, error) {
 				return ads.AdAccount{}, catalog.ErrConflict
 			}},
 			expectedStatus: http.StatusConflict,
 		},
 		{
-			name: "account hierarchy not found",
+			name:   "account hierarchy not found",
 			method: http.MethodGet,
-			path: "/api/v1/ad-accounts/00000000-0000-0000-0000-000000000001/hierarchy",
+			path:   "/api/v1/ad-accounts/00000000-0000-0000-0000-000000000001/hierarchy",
 			service: catalogServiceStub{hierarchyFn: func(context.Context, string) (ads.AccountHierarchy, error) {
 				return ads.AccountHierarchy{}, catalog.ErrNotFound
 			}},

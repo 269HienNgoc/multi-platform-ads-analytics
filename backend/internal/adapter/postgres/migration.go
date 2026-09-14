@@ -141,7 +141,7 @@ func (c *Client) applyMigration(ctx context.Context, migration migrationFiles, a
 			return nil
 		}
 		// Migration files are repository-controlled schema source, not request input.
-		if execErr := tx.Exec(string(content)).Error; execErr != nil { //nolint:gosec
+		if execErr := tx.Exec(string(content)).Error; execErr != nil {
 			return fmt.Errorf("executing migration %d: %w", migration.version, execErr)
 		}
 		if action == MigrationActionUp {

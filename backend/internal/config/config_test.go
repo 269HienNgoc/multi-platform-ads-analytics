@@ -55,13 +55,13 @@ func TestDatabaseDSN(t *testing.T) {
 	t.Parallel()
 
 	database := Database{
-		Host:     "db.internal",
-		Port:     5432,
-		Name:     "ads data",
-		User:     "ads-user",
-		Password: "a secret with spaces",
-		SSLMode:  "require",
-		Timezone: "UTC",
+		Host:           "db.internal",
+		Port:           5432,
+		Name:           "ads data",
+		User:           "ads-user",
+		Password:       "a secret with spaces",
+		SSLMode:        "require",
+		Timezone:       "UTC",
 		ConnectTimeout: time.Second,
 	}
 

@@ -137,8 +137,8 @@ type hierarchyResponse struct {
 }
 
 type campaignNodeResponse struct {
-	Campaign campaignResponse        `json:"campaign"`
-	AdGroups []adGroupNodeResponse   `json:"ad_groups"`
+	Campaign campaignResponse      `json:"campaign"`
+	AdGroups []adGroupNodeResponse `json:"ad_groups"`
 }
 
 type adGroupNodeResponse struct {

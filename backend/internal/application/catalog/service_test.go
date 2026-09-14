@@ -14,7 +14,7 @@ type storeStub struct {
 	createAdGroupFn  func(context.Context, *ads.AdGroup) error
 	createAdFn       func(context.Context, *ads.Ad) error
 	createCreativeFn func(context.Context, *ads.Creative) error
-	hierarchyFn       func(context.Context, string) (ads.AccountHierarchy, error)
+	hierarchyFn      func(context.Context, string) (ads.AccountHierarchy, error)
 }
 
 func (s storeStub) CreateAccount(ctx context.Context, account *ads.AdAccount) error {
