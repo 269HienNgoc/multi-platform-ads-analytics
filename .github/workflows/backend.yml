@@ -52,3 +52,51 @@ jobs:
           version: latest
           working-directory: backend
           args: --timeout 5m
+
+  postgres-smoke:
+    name: PostgreSQL migration and API smoke test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ADS_DATABASE_HOST: 127.0.0.1
+      ADS_DATABASE_PORT: 5432
+      ADS_DATABASE_NAME: multi_platform_ads
+      ADS_DATABASE_USER: postgres
+      ADS_DATABASE_PASSWORD: postgres
+      ADS_DATABASE_SSL_MODE: disable
+      ADS_LOG_LEVEL: error
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+          cache-dependency-path: backend/go.sum
+      - name: Start PostgreSQL
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql --set ON_ERROR_STOP=1 --command "ALTER USER postgres WITH PASSWORD 'postgres'"
+          sudo -u postgres createdb multi_platform_ads
+      - name: Apply migrations
+        run: go run ./cmd/migrate -config configs/config.yaml -migrations migrations -action up
+      - name: Run API smoke test
+        run: |
+          go build -o /tmp/ads-api ./cmd/api
+          /tmp/ads-api -config configs/config.yaml >/tmp/ads-api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid"; wait "$api_pid" || true' EXIT
+
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused \
+            http://127.0.0.1:8080/health/ready
+
+          curl --fail --silent --show-error \
+            --header "Content-Type: application/json" \
+            --data '{"platform":"meta","external_id":"act_ci","name":"CI account","currency":"USD","timezone":"UTC","status":"active","provider_data":{}}' \
+            http://127.0.0.1:8080/api/v1/ad-accounts >/tmp/account.json
+
+          account_id=$(jq --exit-status --raw-output '.id' /tmp/account.json)
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8080/api/v1/ad-accounts/${account_id}/hierarchy" \
+            | jq --exit-status --arg account_id "$account_id" '.account.id == $account_id'
