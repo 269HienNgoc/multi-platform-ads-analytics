@@ -21,7 +21,10 @@ type Client struct {
 func Open(ctx context.Context, cfg config.Database, logger *zap.Logger) (*Client, error) {
 	db, err := gorm.Open(
 		gormpostgres.Open(cfg.DSN()),
-		&gorm.Config{Logger: newGORMLogger(logger, cfg.SlowQueryThreshold)},
+		&gorm.Config{
+			Logger:         newGORMLogger(logger, cfg.SlowQueryThreshold),
+			TranslateError: true,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("opening postgres connection: %w", err)

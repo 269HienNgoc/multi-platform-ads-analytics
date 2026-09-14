@@ -128,6 +128,7 @@ func (d Database) DSN() string {
 	query := connectionURL.Query()
 	query.Set("sslmode", d.SSLMode)
 	query.Set("timezone", d.Timezone)
+	query.Set("connect_timeout", strconv.Itoa(max(int(d.ConnectTimeout.Seconds()), 1)))
 	connectionURL.RawQuery = query.Encode()
 
 	return connectionURL.String()

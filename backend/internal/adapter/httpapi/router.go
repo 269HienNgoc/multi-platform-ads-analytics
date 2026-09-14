@@ -11,7 +11,7 @@ import (
 )
 
 // NewServer creates a hardened HTTP server and registers application routes.
-func NewServer(cfg config.Server, healthService *health.Service, logger *zap.Logger) *http.Server {
+func NewServer(cfg config.Server, healthService *health.Service, catalogUseCases catalogService, logger *zap.Logger) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(
@@ -24,6 +24,15 @@ func NewServer(cfg config.Server, healthService *health.Service, logger *zap.Log
 	healthGroup := router.Group("/health")
 	healthGroup.GET("/live", healthHandler.liveness)
 	healthGroup.GET("/ready", healthHandler.readiness)
+
+	catalogHandler := newCatalogHandler(catalogUseCases, logger)
+	api := router.Group("/api/v1")
+	api.POST("/ad-accounts", catalogHandler.createAccount)
+	api.POST("/campaigns", catalogHandler.createCampaign)
+	api.POST("/ad-groups", catalogHandler.createAdGroup)
+	api.POST("/ads", catalogHandler.createAd)
+	api.POST("/creatives", catalogHandler.createCreative)
+	api.GET("/ad-accounts/:accountID/hierarchy", catalogHandler.accountHierarchy)
 
 	return &http.Server{
 		Addr:              cfg.Address,

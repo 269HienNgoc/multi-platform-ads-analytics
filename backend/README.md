@@ -14,16 +14,70 @@ Copy `.env.example` to `.env` for local development and update the database valu
 
 VPS credentials must be supplied through environment variables or the process manager. Do not commit passwords to YAML.
 
-## Run
+## Run locally
+
+Clone the repository and switch to the integration branch:
 
 ```bash
+git clone https://github.com/269HienNgoc/multi-platform-ads-analytics.git
+cd multi-platform-ads-analytics
+git switch dev
+cd backend
+```
+
+Create the local database once, then copy and update the environment file:
+
+```bash
+createdb -U postgres multi_platform_ads
+cp .env.example .env
+```
+
+Apply the versioned schema before starting the API:
+
+```bash
+make migrate-up
 make run
+```
+
+If `make` is not available, including on a default Windows installation, use the equivalent Go commands:
+
+```bash
+go run ./cmd/migrate -config configs/config.yaml -migrations migrations -action up
+go run ./cmd/api -config configs/config.yaml
 ```
 
 The default endpoints are:
 
 - `GET /health/live` — process liveness.
 - `GET /health/ready` — PostgreSQL readiness.
+- `POST /api/v1/ad-accounts` — create an advertising account.
+- `POST /api/v1/campaigns` — create a campaign.
+- `POST /api/v1/ad-groups` — create an ad group/ad set.
+- `POST /api/v1/ads` — create an ad.
+- `POST /api/v1/creatives` — create a creative.
+- `GET /api/v1/ad-accounts/{accountID}/hierarchy` — read the complete account hierarchy.
+
+Example account request:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/ad-accounts \
+  -H "Content-Type: application/json" \
+  -d '{"platform":"meta","external_id":"act_123","name":"Local test","currency":"USD","timezone":"Asia/Ho_Chi_Minh","status":"active","provider_data":{}}'
+```
+
+Supported canonical platforms are `meta`, `tiktok`, and `google`. Supported entity statuses are `active`, `paused`, and `archived`.
+
+## Database migrations
+
+Migrations are stored in `migrations/` and applied transactionally. The service never calls GORM `AutoMigrate`.
+
+```bash
+make migrate-version
+make migrate-up
+make migrate-down # rolls back one migration and can delete data
+```
+
+Run only one migration process at a time during deployment. Database passwords belong in `.env` locally or VPS environment variables in production.
 
 ## Validate
 
@@ -39,3 +93,4 @@ make check
 - `internal/application` contains use cases and the interfaces they consume.
 - `internal/adapter` contains Gin and PostgreSQL implementations.
 - `internal/config` and `internal/logging` provide centralized infrastructure configuration.
+- `migrations` contains reviewed PostgreSQL schema changes and rollback files.

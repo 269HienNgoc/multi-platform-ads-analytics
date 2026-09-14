@@ -62,6 +62,7 @@ func TestDatabaseDSN(t *testing.T) {
 		Password: "a secret with spaces",
 		SSLMode:  "require",
 		Timezone: "UTC",
+		ConnectTimeout: time.Second,
 	}
 
 	dsn := database.DSN()
@@ -70,6 +71,9 @@ func TestDatabaseDSN(t *testing.T) {
 	}
 	if !strings.Contains(dsn, "sslmode=require") {
 		t.Errorf("DSN() = %q, expected sslmode query", dsn)
+	}
+	if !strings.Contains(dsn, "connect_timeout=1") {
+		t.Errorf("DSN() = %q, expected connect timeout query", dsn)
 	}
 }
 

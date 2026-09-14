@@ -5,10 +5,13 @@ The backend follows Clean Architecture with manual constructor injection. Depend
 ```text
 backend/
 ├── cmd/api/                    # Minimal executable entry point
+├── cmd/migrate/                # One-off schema migration command
 ├── configs/                    # Non-secret YAML defaults
+├── migrations/                 # Versioned PostgreSQL schema
 ├── internal/
 │   ├── app/                    # Composition root and lifecycle
 │   ├── domain/ads/             # Canonical, provider-neutral concepts
+│   ├── application/catalog/    # Advertising hierarchy use cases and ports
 │   ├── application/health/     # Use case and consumed port
 │   ├── adapter/httpapi/        # Gin routes and middleware
 │   ├── adapter/postgres/       # GORM/PostgreSQL implementation

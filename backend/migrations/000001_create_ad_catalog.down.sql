@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS raw_provider_payloads;
+DROP TABLE IF EXISTS sync_runs;
+DROP TABLE IF EXISTS performance_metrics_daily;
+DROP TABLE IF EXISTS creatives;
+DROP TABLE IF EXISTS ads;
+DROP TABLE IF EXISTS ad_groups;
+DROP TABLE IF EXISTS campaigns;
+DROP TABLE IF EXISTS ad_accounts;
+DROP TABLE IF EXISTS platforms;
