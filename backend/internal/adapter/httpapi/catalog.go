@@ -142,7 +142,7 @@ type campaignNodeResponse struct {
 }
 
 type adGroupNodeResponse struct {
-	AdGroup adGroupResponse `json:"ad_group"`
+	AdGroup adGroupResponse  `json:"ad_group"`
 	Ads     []adNodeResponse `json:"ads"`
 }
 
