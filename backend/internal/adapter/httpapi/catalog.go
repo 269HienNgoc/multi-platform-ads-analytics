@@ -331,7 +331,7 @@ func creativeToResponse(creative ads.Creative) creativeResponse {
 
 func hierarchyToResponse(hierarchy ads.AccountHierarchy) hierarchyResponse {
 	response := hierarchyResponse{
-		Account: accountToResponse(hierarchy.Account),
+		Account:   accountToResponse(hierarchy.Account),
 		Campaigns: make([]campaignNodeResponse, 0, len(hierarchy.Campaigns)),
 	}
 	for _, campaignNode := range hierarchy.Campaigns {
@@ -342,11 +342,11 @@ func hierarchyToResponse(hierarchy ads.AccountHierarchy) hierarchyResponse {
 		for _, groupNode := range campaignNode.AdGroups {
 			group := adGroupNodeResponse{
 				AdGroup: adGroupToResponse(groupNode.AdGroup),
-				Ads: make([]adNodeResponse, 0, len(groupNode.Ads)),
+				Ads:     make([]adNodeResponse, 0, len(groupNode.Ads)),
 			}
 			for _, adNode := range groupNode.Ads {
 				adResponseNode := adNodeResponse{
-					Ad: adToResponse(adNode.Ad),
+					Ad:        adToResponse(adNode.Ad),
 					Creatives: make([]creativeResponse, 0, len(adNode.Creatives)),
 				}
 				for _, creative := range adNode.Creatives {
