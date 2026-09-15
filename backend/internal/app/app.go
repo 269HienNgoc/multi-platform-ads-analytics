@@ -10,6 +10,7 @@ import (
 
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/adapter/httpapi"
 	postgresadapter "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/adapter/postgres"
+	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/automation"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/catalog"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/health"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/config"
@@ -53,7 +54,15 @@ func run(ctx context.Context, cfg config.Config, logger *zap.Logger) (resultErr 
 	healthService := health.New(database)
 	catalogStore := postgresadapter.NewCatalogStore(database)
 	catalogService := catalog.New(catalogStore)
-	server := httpapi.NewServer(cfg.Server, healthService, catalogService, logger)
+	automationStore := postgresadapter.NewAutomationStore(database)
+	automationService := automation.New(automationStore)
+	server := httpapi.NewServer(
+		cfg.Server,
+		healthService,
+		catalogService,
+		automationService,
+		logger,
+	)
 	serverErrors := make(chan error, 1)
 
 	go func() {

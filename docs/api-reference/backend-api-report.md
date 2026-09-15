@@ -12,7 +12,7 @@ Backend hiện đã cung cấp nền tảng cho danh mục quảng cáo đa nề
 
 API đang chạy trên Gin, dữ liệu được lưu bằng GORM/PostgreSQL, cấu hình đọc từ YAML qua Viper và log có cấu trúc bằng Zap. Mã định danh nội bộ là UUID; mã của Meta, TikTok hoặc Google chỉ được lưu trong `external_id`.
 
-Hiện có **8 endpoint**: 2 endpoint kiểm tra sức khỏe, 5 endpoint tạo dữ liệu và 1 endpoint đọc toàn bộ cây dữ liệu của một tài khoản.
+Hiện có **12 endpoint**: 2 endpoint kiểm tra sức khỏe, 6 endpoint tạo dữ liệu, 3 endpoint thao tác workflow và 1 endpoint đọc toàn bộ cây dữ liệu của một tài khoản.
 
 ## 2. Danh sách endpoint
 
@@ -26,6 +26,10 @@ Hiện có **8 endpoint**: 2 endpoint kiểm tra sức khỏe, 5 endpoint tạo 
 | `POST` | `/api/v1/ads` | Tạo quảng cáo | `201` |
 | `POST` | `/api/v1/creatives` | Tạo nội dung quảng cáo | `201` |
 | `GET` | `/api/v1/ad-accounts/{accountID}/hierarchy` | Đọc toàn bộ cây dữ liệu của tài khoản | `200` |
+| `GET` | `/api/v1/workflows` | Liệt kê workflow automation | `200` |
+| `POST` | `/api/v1/workflows/bulk` | Tạo một workflow cho mỗi tài khoản đã chọn | `201` |
+| `POST` | `/api/v1/workflows/{workflowID}/transition` | Chuyển trạng thái workflow hợp lệ | `200` |
+| `POST` | `/api/v1/workflows/{workflowID}/metrics` | Ghi metric và tự chuyển Camp mồi đã đủ ngưỡng | `200` |
 
 ## 3. Quy ước chung
 
@@ -63,6 +67,7 @@ Hiện có **8 endpoint**: 2 endpoint kiểm tra sức khỏe, 5 endpoint tạo 
 | `400` | `invalid_request` | JSON sai, thiếu trường bắt buộc, UUID sai hoặc dữ liệu không hợp lệ |
 | `404` | `not_found` | Không tìm thấy entity hoặc entity cha |
 | `409` | `conflict` | Trùng `external_id` trong cùng phạm vi cha |
+| `409` | `invalid_transition` | Yêu cầu chuyển trạng thái workflow không hợp lệ |
 | `500` | `internal_error` | Lỗi ngoài dự kiến; chi tiết chỉ ghi vào Zap log |
 | `503` | Không dùng error envelope | PostgreSQL chưa sẵn sàng ở `/health/ready` |
 
@@ -278,6 +283,26 @@ Response `200` rút gọn:
 }
 ```
 
+### Campaign workflow automation
+
+Tạo workflow hàng loạt bằng `POST /api/v1/workflows/bulk`:
+
+```json
+{
+  "organization_id": "local-testing",
+  "ad_account_ids": ["c778ba63-664b-4a57-8ea7-2bd4f8d6d213"],
+  "page_external_id": "1029384756",
+  "pixel_external_id": "5647382910",
+  "pixel_event": "Purchase",
+  "existing_post_id": "1029384756_1234567890",
+  "seed_spend_limit_usd": 10
+}
+```
+
+Mỗi account tạo một record độc lập ở trạng thái `SEED_PENDING`. `GET /api/v1/workflows` trả `{"data": [...]}`. Chuyển trạng thái bằng body `{"state":"SEED_CREATING"}` tại endpoint `transition`.
+
+Endpoint `metrics` nhận `spend_usd`, `registrations`, `deposits`, `cost_per_registration`, `cost_per_deposit` và `captured_at`. Nếu workflow đang `SEED_RUNNING` và `spend_usd` đạt `seed_spend_limit_usd`, backend ghi metric và chuyển nguyên tử sang `MAIN_PENDING`.
+
 ## 5. Dữ liệu đã có schema nhưng chưa có API
 
 Migration PostgreSQL đã tạo các bảng sau nhưng router hiện chưa expose endpoint tương ứng:
@@ -285,6 +310,7 @@ Migration PostgreSQL đã tạo các bảng sau nhưng router hiện chưa expos
 - `performance_metrics_daily`: impression, reach, click, conversion, spend, revenue và metric riêng của provider theo ngày.
 - `sync_runs`: trạng thái đồng bộ, cursor, số record đã xử lý và lỗi.
 - `raw_provider_payloads`: payload gốc có hash chống trùng để phục vụ audit và AI.
+- `automation_rules`: rule định lượng có ngưỡng chi tiêu/mẫu; domain evaluator đã có nhưng chưa expose CRUD API.
 
 Các bảng catalog cũng có `last_synced_at`, nhưng response hiện tại chưa trả trường này.
 
@@ -297,7 +323,7 @@ Các bảng catalog cũng có `last_synced_at`, nhưng response hiện tại ch�
 | Xem một cây tài khoản | Đủ khi đã biết UUID | Gọi endpoint `hierarchy` |
 | Danh sách tất cả tài khoản | Chưa có | Dùng dữ liệu demo có nhãn rõ ràng |
 | Dashboard KPI/biểu đồ | Chưa có API đọc metric | Dùng dữ liệu demo có nhãn rõ ràng |
-| Cấu hình hàng loạt nhiều tài khoản | Chưa có | Thiết kế luồng UI trước, chưa gửi lệnh thật |
+| Cấu hình hàng loạt nhiều tài khoản | Đủ cho workflow foundation | Dashboard gửi lệnh thật sau khi tạo account backend |
 | Bật/tắt/sửa/xóa campaign | Chưa có | Chỉ hiển thị trạng thái, không giả lập thao tác ghi |
 | Đăng nhập và phân quyền | Chưa có | Không public backend ra internet |
 
@@ -307,7 +333,7 @@ Các bảng catalog cũng có `last_synced_at`, nhưng response hiện tại ch�
 2. Thêm `GET /ad-accounts` có phân trang, filter platform/status và tìm kiếm.
 3. Thêm API tổng hợp dashboard theo khoảng ngày và timezone.
 4. Thêm API đọc campaign/ad group/ad theo danh sách thay vì chỉ đọc toàn bộ hierarchy.
-5. Thêm workflow chạy hàng loạt, idempotency key và trạng thái job cho quy trình Camp mồi → Conversion → Scale.
+5. Thêm idempotency key, batch job và worker cho quy trình Camp mồi → Conversion → Scale.
 6. Thêm API quản lý connector, token và lịch đồng bộ; tuyệt đối không trả access token về frontend.
 7. Thêm CORS nếu frontend gọi backend trực tiếp. Bản frontend hiện dùng Next.js rewrite nên local development chưa cần CORS.
 8. Bổ sung OpenAPI vào CI để phát hiện thay đổi contract làm hỏng frontend.
@@ -327,4 +353,5 @@ Các bảng catalog cũng có `last_synced_at`, nhưng response hiện tại ch�
 - Validation: `backend/internal/application/catalog/service.go`
 - Domain constants: `backend/internal/domain/ads/`
 - PostgreSQL schema: `backend/migrations/000001_create_ad_catalog.up.sql`
+- Automation: `backend/internal/application/automation/` và migration `000002_create_campaign_automation.up.sql`
 - Machine-readable contract: `docs/api-reference/openapi.yaml`

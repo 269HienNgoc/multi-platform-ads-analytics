@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	applicationautomation "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/automation"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/catalog"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/health"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/config"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/domain/ads"
+	automationdomain "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/domain/automation"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +25,44 @@ type healthPingerStub struct {
 type catalogServiceStub struct {
 	createAccountFn func(context.Context, ads.AdAccount) (ads.AdAccount, error)
 	hierarchyFn     func(context.Context, string) (ads.AccountHierarchy, error)
+}
+
+type automationServiceStub struct {
+	createBulkFn func(
+		context.Context,
+		applicationautomation.CreateBulkInput,
+	) ([]automationdomain.CampaignWorkflow, error)
+}
+
+func (automationServiceStub) List(context.Context) ([]automationdomain.CampaignWorkflow, error) {
+	return []automationdomain.CampaignWorkflow{}, nil
+}
+
+func (s automationServiceStub) CreateBulk(
+	ctx context.Context,
+	input applicationautomation.CreateBulkInput,
+) ([]automationdomain.CampaignWorkflow, error) {
+	if s.createBulkFn == nil {
+		return []automationdomain.CampaignWorkflow{}, nil
+	}
+
+	return s.createBulkFn(ctx, input)
+}
+
+func (automationServiceStub) Transition(
+	context.Context,
+	string,
+	automationdomain.WorkflowState,
+) (automationdomain.CampaignWorkflow, error) {
+	return automationdomain.CampaignWorkflow{}, nil
+}
+
+func (automationServiceStub) ApplyMetrics(
+	context.Context,
+	string,
+	automationdomain.CampaignMetrics,
+) (automationdomain.CampaignWorkflow, error) {
+	return automationdomain.CampaignWorkflow{}, nil
 }
 
 func (s catalogServiceStub) CreateAccount(ctx context.Context, account ads.AdAccount) (ads.AdAccount, error) {
@@ -86,7 +126,13 @@ func TestHealthRoutes(t *testing.T) {
 			t.Parallel()
 
 			service := health.New(healthPingerStub{err: test.pingErr})
-			server := NewServer(testServerConfig(), service, catalogServiceStub{}, zap.NewNop())
+			server := NewServer(
+				testServerConfig(),
+				service,
+				catalogServiceStub{},
+				automationServiceStub{},
+				zap.NewNop(),
+			)
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, test.path, nil)
 			response := httptest.NewRecorder()
 
@@ -122,7 +168,13 @@ func TestRequestIDValidation(t *testing.T) {
 			t.Parallel()
 
 			service := health.New(healthPingerStub{})
-			server := NewServer(testServerConfig(), service, catalogServiceStub{}, zap.NewNop())
+			server := NewServer(
+				testServerConfig(),
+				service,
+				catalogServiceStub{},
+				automationServiceStub{},
+				zap.NewNop(),
+			)
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health/live", nil)
 			request.Header.Set(requestIDHeader, test.requestID)
 			response := httptest.NewRecorder()
@@ -199,7 +251,13 @@ func TestCatalogRoutes(t *testing.T) {
 			t.Parallel()
 
 			healthService := health.New(healthPingerStub{})
-			server := NewServer(testServerConfig(), healthService, test.service, zap.NewNop())
+			server := NewServer(
+				testServerConfig(),
+				healthService,
+				test.service,
+				automationServiceStub{},
+				zap.NewNop(),
+			)
 			request := httptest.NewRequestWithContext(t.Context(), test.method, test.path, strings.NewReader(test.body))
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
@@ -209,6 +267,41 @@ func TestCatalogRoutes(t *testing.T) {
 				t.Errorf("status = %d, expected %d; body = %s", response.Code, test.expectedStatus, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestAutomationRoutes(t *testing.T) {
+	t.Parallel()
+
+	accountID := "00000000-0000-4000-8000-000000000001"
+	automationStub := automationServiceStub{createBulkFn: func(
+		_ context.Context,
+		input applicationautomation.CreateBulkInput,
+	) ([]automationdomain.CampaignWorkflow, error) {
+		return []automationdomain.CampaignWorkflow{{
+			ID: accountID, OrganizationID: input.OrganizationID, AdAccountID: input.AdAccountIDs[0],
+			State: automationdomain.StateSeedPending,
+		}}, nil
+	}}
+	server := NewServer(
+		testServerConfig(),
+		health.New(healthPingerStub{}),
+		catalogServiceStub{},
+		automationStub,
+		zap.NewNop(),
+	)
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/api/v1/workflows/bulk",
+		strings.NewReader(`{"organization_id":"org","ad_account_ids":["`+accountID+`"],"page_external_id":"page"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Errorf("status = %d, expected %d; body = %s", response.Code, http.StatusCreated, response.Body.String())
 	}
 }
 

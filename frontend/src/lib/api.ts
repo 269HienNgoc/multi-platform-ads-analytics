@@ -1,4 +1,11 @@
-import type { AdAccount, APIErrorResponse, CreateAdAccountInput, HealthResponse } from "@/types/ads";
+import type {
+  AdAccount,
+  APIErrorResponse,
+  BulkWorkflowResponse,
+  CreateAdAccountInput,
+  CreateBulkWorkflowInput,
+  HealthResponse,
+} from "@/types/ads";
 
 export class APIRequestError extends Error {
   constructor(
@@ -44,6 +51,13 @@ export function getBackendReadiness(signal?: AbortSignal) {
 
 export function createAdAccount(input: CreateAdAccountInput) {
   return request<AdAccount>("/api/v1/ad-accounts", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function createBulkWorkflows(input: CreateBulkWorkflowInput) {
+  return request<BulkWorkflowResponse>("/api/v1/workflows/bulk", {
     method: "POST",
     body: JSON.stringify(input),
   });

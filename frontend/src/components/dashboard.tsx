@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-import { APIRequestError, createAdAccount, getBackendReadiness } from "@/lib/api";
+import { APIRequestError, createAdAccount, createBulkWorkflows, getBackendReadiness } from "@/lib/api";
 import {
   initialAccounts,
   metrics,
@@ -236,8 +236,64 @@ function AddAccountDialog({
   );
 }
 
-function WorkflowDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+function WorkflowDrawer({
+  open,
+  onClose,
+  accounts,
+  backendConnected,
+}: {
+  open: boolean;
+  onClose: () => void;
+  accounts: DashboardAccount[];
+  backendConnected: boolean;
+}) {
+  const connectedAccounts = useMemo(
+    () => accounts.filter((account) => !account.id.startsWith("demo-")),
+    [accounts],
+  );
+  const [selectedAccountIDs, setSelectedAccountIDs] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ type: "error" | "success"; text: string }>();
+
   if (!open) return null;
+
+  function toggleAccount(accountID: string) {
+    setSelectedAccountIDs((current) => current.includes(accountID)
+      ? current.filter((id) => id !== accountID)
+      : [...current, accountID]);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (selectedAccountIDs.length === 0) {
+      setMessage({ type: "error", text: "Hãy chọn ít nhất một tài khoản backend." });
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage(undefined);
+    const form = new FormData(event.currentTarget);
+    try {
+      const result = await createBulkWorkflows({
+        organization_id: String(form.get("organization_id")),
+        ad_account_ids: selectedAccountIDs,
+        page_external_id: String(form.get("page_external_id")),
+        pixel_external_id: String(form.get("pixel_external_id")),
+        pixel_event: String(form.get("pixel_event")),
+        existing_post_id: String(form.get("existing_post_id")),
+        seed_spend_limit_usd: Number(form.get("seed_spend_limit_usd")),
+      });
+      setMessage({ type: "success", text: `Đã tạo ${result.count} workflow ở trạng thái SEED_PENDING.` });
+    } catch (error) {
+      const text = error instanceof APIRequestError && error.status === 404
+        ? "Có tài khoản không còn tồn tại trong backend. Hãy tạo lại tài khoản."
+        : "Không thể tạo workflow. Kiểm tra kết nối và dữ liệu cấu hình.";
+      setMessage({ type: "error", text });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="workflow-title">
@@ -248,11 +304,21 @@ function WorkflowDrawer({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Đóng"><X size={20} /></button>
         </div>
-        <p className="dialog-intro">Chọn tài khoản rồi hoàn thành từng bước. Backend workflow hàng loạt chưa mở nên nút chạy thật đang được khóa.</p>
-        <div className="drawer-account">
-          <PlatformMark platform="meta" />
-          <div><strong>Bloom Skincare VN</strong><span>Meta · act_8902…481</span></div>
-          <ChevronDown size={18} />
+        <p className="dialog-intro">Một cấu hình sẽ tạo workflow độc lập cho từng tài khoản đã chọn, nên lỗi ở một tài khoản không chặn các tài khoản khác.</p>
+        <div className="workflow-account-list" aria-label="Tài khoản backend">
+          {connectedAccounts.length === 0 ? (
+            <p className="drawer-empty">Hãy dùng “Thêm tài khoản” trước. Dữ liệu minh họa không được gửi vào backend.</p>
+          ) : connectedAccounts.map((account) => (
+            <label className="workflow-account-choice" key={account.id}>
+              <input
+                type="checkbox"
+                checked={selectedAccountIDs.includes(account.id)}
+                onChange={() => toggleAccount(account.id)}
+              />
+              <PlatformMark platform={account.platform} />
+              <span><strong>{account.name}</strong><small>{platformMeta[account.platform].name} · {account.externalID}</small></span>
+            </label>
+          ))}
         </div>
         <ol className="setup-steps">
           <li className="step-complete">
@@ -268,17 +334,31 @@ function WorkflowDrawer({ open, onClose }: { open: boolean; onClose: () => void 
             <div><strong>Chuẩn bị Conversion</strong><p>Pixel, event, 2–3 ad set và 2–3 creative cho mỗi ad set.</p></div>
           </li>
         </ol>
-        <div className="drawer-fields">
-          <label>Bài viết dùng cho Camp mồi<select defaultValue="post-1"><option value="post-1">Video UGC — Giá dùng thử</option><option value="post-2">Carousel — Routine 3 bước</option></select></label>
-          <div className="split-fields">
-            <label>Ngân sách<input defaultValue="$10" /></label>
-            <label>Bán kính<input defaultValue="40 km" /></label>
+        <form onSubmit={submit}>
+          <div className="drawer-fields">
+            <label>Mã tổ chức<input name="organization_id" defaultValue="local-testing" required /></label>
+            <label>ID Page trên nền tảng<input name="page_external_id" placeholder="Ví dụ: 1029384756" required /></label>
+            <div className="split-fields">
+              <label>ID Pixel<input name="pixel_external_id" placeholder="Tùy chọn" /></label>
+              <label>Event<input name="pixel_event" defaultValue="Purchase" /></label>
+            </div>
+            <div className="split-fields">
+              <label>ID bài viết<input name="existing_post_id" placeholder="Tùy chọn" /></label>
+              <label>Ngưỡng Camp mồi (USD)<input name="seed_spend_limit_usd" type="number" min="0.01" step="0.01" defaultValue="10" required /></label>
+            </div>
           </div>
-        </div>
-        <div className="drawer-footer">
-          <p><AlertTriangle size={16} /> Cần bổ sung API workflow trước khi chạy thật.</p>
-          <button className="button button-primary" disabled type="button">Lưu và chạy Camp mồi</button>
-        </div>
+          {message && <p className={`form-message message-${message.type}`} role="status">{message.text}</p>}
+          <div className="drawer-footer">
+            {!backendConnected && <p><AlertTriangle size={16} /> Backend chưa sẵn sàng.</p>}
+            <button
+              className="button button-primary"
+              disabled={submitting || !backendConnected || connectedAccounts.length === 0}
+              type="submit"
+            >
+              {submitting ? "Đang tạo workflow…" : `Tạo workflow cho ${selectedAccountIDs.length} tài khoản`}
+            </button>
+          </div>
+        </form>
       </aside>
     </div>
   );
@@ -503,7 +583,12 @@ export function Dashboard() {
 
       {menuOpen && <button className="mobile-overlay" type="button" onClick={() => setMenuOpen(false)} aria-label="Đóng menu" />}
       <AddAccountDialog open={addAccountOpen} onClose={() => setAddAccountOpen(false)} onCreated={(account) => setAccounts((current) => [account, ...current])} />
-      <WorkflowDrawer open={workflowOpen} onClose={() => setWorkflowOpen(false)} />
+      <WorkflowDrawer
+        open={workflowOpen}
+        onClose={() => setWorkflowOpen(false)}
+        accounts={accounts}
+        backendConnected={backendState === "connected"}
+      />
     </div>
   );
 }
