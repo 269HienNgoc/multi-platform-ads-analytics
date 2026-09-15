@@ -8,7 +8,7 @@ type Decision struct {
 }
 
 // Evaluate applies minimum-spend and sample guardrails before comparing a metric.
-func Evaluate(rule AutomationRule, metrics CampaignMetrics) Decision {
+func Evaluate(rule Rule, metrics CampaignMetrics) Decision {
 	if !rule.Enabled || metrics.SpendUSD < rule.MinimumSpend {
 		return Decision{}
 	}

@@ -122,8 +122,8 @@ const (
 	ActionManualReview RuleAction = "MANUAL_REVIEW"
 )
 
-// AutomationRule describes one guarded metric comparison.
-type AutomationRule struct {
+// Rule describes one guarded metric comparison.
+type Rule struct {
 	ID             string       `json:"id"`
 	Name           string       `json:"name"`
 	Metric         RuleMetric   `json:"metric"`

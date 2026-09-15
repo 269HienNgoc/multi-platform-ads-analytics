@@ -5,7 +5,7 @@ import "testing"
 func TestEvaluate(t *testing.T) {
 	t.Parallel()
 
-	rule := AutomationRule{
+	rule := Rule{
 		ID: "pause-expensive", Metric: MetricCostPerRegistration, Operator: OperatorGT,
 		Threshold: 8, MinimumSpend: 50, MinimumSamples: 3, Action: ActionPauseCampaign, Enabled: true,
 	}
