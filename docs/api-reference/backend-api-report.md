@@ -1,0 +1,330 @@
+# Báo cáo API backend
+
+Ngày rà soát: 15/09/2026  
+Phiên bản API: `v1`  
+Base URL local: `http://127.0.0.1:8080`
+
+## 1. Tóm tắt hiện trạng
+
+Backend hiện đã cung cấp nền tảng cho danh mục quảng cáo đa nền tảng theo mô hình:
+
+`Platform → Ad Account → Campaign → Ad Group/Ad Set → Ad → Creative`
+
+API đang chạy trên Gin, dữ liệu được lưu bằng GORM/PostgreSQL, cấu hình đọc từ YAML qua Viper và log có cấu trúc bằng Zap. Mã định danh nội bộ là UUID; mã của Meta, TikTok hoặc Google chỉ được lưu trong `external_id`.
+
+Hiện có **8 endpoint**: 2 endpoint kiểm tra sức khỏe, 5 endpoint tạo dữ liệu và 1 endpoint đọc toàn bộ cây dữ liệu của một tài khoản.
+
+## 2. Danh sách endpoint
+
+| Method | Endpoint | Chức năng | Thành công |
+| --- | --- | --- | --- |
+| `GET` | `/health/live` | Kiểm tra process API đang chạy | `200` |
+| `GET` | `/health/ready` | Kiểm tra API và PostgreSQL sẵn sàng | `200` |
+| `POST` | `/api/v1/ad-accounts` | Tạo tài khoản quảng cáo | `201` |
+| `POST` | `/api/v1/campaigns` | Tạo chiến dịch trong tài khoản | `201` |
+| `POST` | `/api/v1/ad-groups` | Tạo nhóm quảng cáo/ad set | `201` |
+| `POST` | `/api/v1/ads` | Tạo quảng cáo | `201` |
+| `POST` | `/api/v1/creatives` | Tạo nội dung quảng cáo | `201` |
+| `GET` | `/api/v1/ad-accounts/{accountID}/hierarchy` | Đọc toàn bộ cây dữ liệu của tài khoản | `200` |
+
+## 3. Quy ước chung
+
+### Header
+
+- Request gửi JSON cần có `Content-Type: application/json`.
+- Client có thể gửi `X-Request-ID` gồm 1–64 ký tự chữ, số, `_` hoặc `-`.
+- Nếu `X-Request-ID` không hợp lệ hoặc bị thiếu, backend tự sinh ID mới.
+- Mọi response đều trả lại `X-Request-ID` để tra log.
+- JSON body bị giới hạn ở 1 MiB.
+
+### Giá trị chuẩn hóa
+
+| Trường | Giá trị hợp lệ |
+| --- | --- |
+| `platform` | `meta`, `tiktok`, `google` |
+| `status` | `active`, `paused`, `archived` |
+| `currency` | Mã tiền tệ gồm đúng 3 ký tự; backend tự chuyển sang chữ hoa |
+| ID cha | UUID nội bộ do backend trả về, không dùng ID của nền tảng |
+| `provider_data` | JSON object chứa trường riêng của từng nền tảng; mặc định `{}` |
+
+### Lỗi chuẩn
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "invalid catalog data"
+  }
+}
+```
+
+| HTTP | `code` | Khi nào xảy ra |
+| --- | --- | --- |
+| `400` | `invalid_request` | JSON sai, thiếu trường bắt buộc, UUID sai hoặc dữ liệu không hợp lệ |
+| `404` | `not_found` | Không tìm thấy entity hoặc entity cha |
+| `409` | `conflict` | Trùng `external_id` trong cùng phạm vi cha |
+| `500` | `internal_error` | Lỗi ngoài dự kiến; chi tiết chỉ ghi vào Zap log |
+| `503` | Không dùng error envelope | PostgreSQL chưa sẵn sàng ở `/health/ready` |
+
+## 4. Chi tiết endpoint
+
+### `GET /health/live`
+
+Response `200`:
+
+```json
+{
+  "status": "up",
+  "checks": {
+    "process": "up"
+  }
+}
+```
+
+### `GET /health/ready`
+
+Response `200` khi PostgreSQL hoạt động:
+
+```json
+{
+  "status": "up",
+  "checks": {
+    "database": "up"
+  }
+}
+```
+
+Response `503` khi PostgreSQL không sẵn sàng:
+
+```json
+{
+  "status": "down",
+  "checks": {
+    "database": "down"
+  }
+}
+```
+
+### `POST /api/v1/ad-accounts`
+
+Request:
+
+```json
+{
+  "platform": "meta",
+  "external_id": "act_123456789",
+  "name": "Meta — Thị trường Việt Nam",
+  "currency": "VND",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "status": "active",
+  "provider_data": {
+    "business_id": "987654321"
+  }
+}
+```
+
+Các trường bắt buộc: `platform`, `external_id`, `name`, `currency`, `timezone`, `status`.
+
+Response `201`:
+
+```json
+{
+  "id": "c778ba63-664b-4a57-8ea7-2bd4f8d6d213",
+  "platform": "meta",
+  "external_id": "act_123456789",
+  "name": "Meta — Thị trường Việt Nam",
+  "currency": "VND",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "status": "active",
+  "provider_data": {
+    "business_id": "987654321"
+  },
+  "created_at": "2026-09-15T08:00:00Z",
+  "updated_at": "2026-09-15T08:00:00Z"
+}
+```
+
+Phạm vi chống trùng: `platform + external_id`.
+
+### `POST /api/v1/campaigns`
+
+Request:
+
+```json
+{
+  "account_id": "c778ba63-664b-4a57-8ea7-2bd4f8d6d213",
+  "external_id": "120210001",
+  "name": "VN | Purchase | Broad | 09-2026",
+  "objective": "sales",
+  "status": "active",
+  "provider_data": {
+    "buying_type": "AUCTION"
+  }
+}
+```
+
+Các trường bắt buộc: `account_id`, `external_id`, `name`, `status`. `objective` và `provider_data` có thể bỏ trống.
+
+Phạm vi chống trùng: `account_id + external_id`.
+
+### `POST /api/v1/ad-groups`
+
+Request:
+
+```json
+{
+  "campaign_id": "1ed688cc-8eb8-4bcb-b35f-b7a2d1cab063",
+  "external_id": "120210002",
+  "name": "Broad | VN | 18–45",
+  "status": "active",
+  "provider_data": {
+    "daily_budget": 250000,
+    "optimization_goal": "OFFSITE_CONVERSIONS"
+  }
+}
+```
+
+Các trường bắt buộc: `campaign_id`, `external_id`, `name`, `status`.
+
+Phạm vi chống trùng: `campaign_id + external_id`.
+
+### `POST /api/v1/ads`
+
+Request:
+
+```json
+{
+  "ad_group_id": "cd0e77cf-e09d-42cf-a1f8-70d738e430a8",
+  "external_id": "120210003",
+  "name": "Video 01 | Hook giá",
+  "status": "active",
+  "provider_data": {
+    "tracking_specs": []
+  }
+}
+```
+
+Các trường bắt buộc: `ad_group_id`, `external_id`, `name`, `status`.
+
+Phạm vi chống trùng: `ad_group_id + external_id`.
+
+### `POST /api/v1/creatives`
+
+Request:
+
+```json
+{
+  "ad_id": "f8c6bd3f-ab42-4f63-8be7-fd501d4dd58f",
+  "external_id": "120210004",
+  "name": "UGC 24s — Hook giá",
+  "format": "video",
+  "asset_url": "https://cdn.example.com/creative-01.mp4",
+  "provider_data": {
+    "headline": "Ưu đãi hôm nay"
+  }
+}
+```
+
+Các trường bắt buộc: `ad_id`, `external_id`, `name`, `format`. `asset_url` và `provider_data` có thể bỏ trống. Backend chuẩn hóa `format` thành chữ thường.
+
+Phạm vi chống trùng: `ad_id + external_id`.
+
+### `GET /api/v1/ad-accounts/{accountID}/hierarchy`
+
+`accountID` phải là UUID nội bộ. Endpoint trả về toàn bộ campaign, ad group, ad và creative của tài khoản trong một response lồng nhau.
+
+Response `200` rút gọn:
+
+```json
+{
+  "account": {
+    "id": "c778ba63-664b-4a57-8ea7-2bd4f8d6d213",
+    "platform": "meta",
+    "external_id": "act_123456789",
+    "name": "Meta — Thị trường Việt Nam",
+    "currency": "VND",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "status": "active",
+    "provider_data": {},
+    "created_at": "2026-09-15T08:00:00Z",
+    "updated_at": "2026-09-15T08:00:00Z"
+  },
+  "campaigns": [
+    {
+      "campaign": {
+        "id": "1ed688cc-8eb8-4bcb-b35f-b7a2d1cab063",
+        "account_id": "c778ba63-664b-4a57-8ea7-2bd4f8d6d213",
+        "external_id": "120210001",
+        "name": "VN | Purchase | Broad | 09-2026",
+        "objective": "sales",
+        "status": "active",
+        "provider_data": {},
+        "created_at": "2026-09-15T08:02:00Z",
+        "updated_at": "2026-09-15T08:02:00Z"
+      },
+      "ad_groups": [
+        {
+          "ad_group": {},
+          "ads": [
+            {
+              "ad": {},
+              "creatives": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+## 5. Dữ liệu đã có schema nhưng chưa có API
+
+Migration PostgreSQL đã tạo các bảng sau nhưng router hiện chưa expose endpoint tương ứng:
+
+- `performance_metrics_daily`: impression, reach, click, conversion, spend, revenue và metric riêng của provider theo ngày.
+- `sync_runs`: trạng thái đồng bộ, cursor, số record đã xử lý và lỗi.
+- `raw_provider_payloads`: payload gốc có hash chống trùng để phục vụ audit và AI.
+
+Các bảng catalog cũng có `last_synced_at`, nhưng response hiện tại chưa trả trường này.
+
+## 6. Khả năng dùng cho frontend hiện tại
+
+| Nhu cầu giao diện | Backend hiện tại | Cách xử lý ở frontend giai đoạn đầu |
+| --- | --- | --- |
+| Hiển thị trạng thái hệ thống | Đủ | Gọi `/health/ready` qua Next.js rewrite |
+| Thêm tài khoản quảng cáo | Đủ | Gọi `POST /ad-accounts` |
+| Xem một cây tài khoản | Đủ khi đã biết UUID | Gọi endpoint `hierarchy` |
+| Danh sách tất cả tài khoản | Chưa có | Dùng dữ liệu demo có nhãn rõ ràng |
+| Dashboard KPI/biểu đồ | Chưa có API đọc metric | Dùng dữ liệu demo có nhãn rõ ràng |
+| Cấu hình hàng loạt nhiều tài khoản | Chưa có | Thiết kế luồng UI trước, chưa gửi lệnh thật |
+| Bật/tắt/sửa/xóa campaign | Chưa có | Chỉ hiển thị trạng thái, không giả lập thao tác ghi |
+| Đăng nhập và phân quyền | Chưa có | Không public backend ra internet |
+
+## 7. Khoảng trống cần ưu tiên ở backend
+
+1. Thêm authentication, authorization và tenant/workspace trước khi public API.
+2. Thêm `GET /ad-accounts` có phân trang, filter platform/status và tìm kiếm.
+3. Thêm API tổng hợp dashboard theo khoảng ngày và timezone.
+4. Thêm API đọc campaign/ad group/ad theo danh sách thay vì chỉ đọc toàn bộ hierarchy.
+5. Thêm workflow chạy hàng loạt, idempotency key và trạng thái job cho quy trình Camp mồi → Conversion → Scale.
+6. Thêm API quản lý connector, token và lịch đồng bộ; tuyệt đối không trả access token về frontend.
+7. Thêm CORS nếu frontend gọi backend trực tiếp. Bản frontend hiện dùng Next.js rewrite nên local development chưa cần CORS.
+8. Bổ sung OpenAPI vào CI để phát hiện thay đổi contract làm hỏng frontend.
+
+## 8. Bảo mật và vận hành
+
+- API chưa có xác thực/phân quyền nên chỉ nên chạy ở local hoặc private network.
+- Middleware đã có request ID, panic recovery, access log Zap và security headers.
+- Response lỗi không làm lộ lỗi database hoặc stack trace.
+- Cấu hình production cần giữ PostgreSQL tại `127.0.0.1:5432` nếu backend và database cùng VPS; password chỉ đặt trong environment của VPS.
+- Không commit `.env` hoặc thông tin đăng nhập nền tảng quảng cáo.
+
+## 9. Nguồn đối chiếu trong mã nguồn
+
+- Router: `backend/internal/adapter/httpapi/router.go`
+- Request/response và error mapping: `backend/internal/adapter/httpapi/catalog.go`
+- Validation: `backend/internal/application/catalog/service.go`
+- Domain constants: `backend/internal/domain/ads/`
+- PostgreSQL schema: `backend/migrations/000001_create_ad_catalog.up.sql`
+- Machine-readable contract: `docs/api-reference/openapi.yaml`

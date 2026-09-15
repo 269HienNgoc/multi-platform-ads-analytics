@@ -1,0 +1,372 @@
+openapi: 3.1.0
+info:
+  title: Multi-Platform Ads Analytics API
+  version: 1.0.0
+  description: API contract currently implemented by the Go backend.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local backend
+tags:
+  - name: Health
+  - name: Catalog
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Check process liveness
+      operationId: getLiveness
+      responses:
+        "200":
+          description: Process is running
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Check PostgreSQL readiness
+      operationId: getReadiness
+      responses:
+        "200":
+          description: API dependencies are ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: PostgreSQL is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/ad-accounts:
+    post:
+      tags: [Catalog]
+      summary: Create an advertising account
+      operationId: createAdAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdAccountRequest"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdAccount"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/campaigns:
+    post:
+      tags: [Catalog]
+      summary: Create a campaign
+      operationId: createCampaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignRequest"
+      responses:
+        "201":
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/ad-groups:
+    post:
+      tags: [Catalog]
+      summary: Create an ad group or ad set
+      operationId: createAdGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdGroupRequest"
+      responses:
+        "201":
+          description: Ad group created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdGroup"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/ads:
+    post:
+      tags: [Catalog]
+      summary: Create an ad
+      operationId: createAd
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdRequest"
+      responses:
+        "201":
+          description: Ad created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ad"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/creatives:
+    post:
+      tags: [Catalog]
+      summary: Create a creative
+      operationId: createCreative
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCreativeRequest"
+      responses:
+        "201":
+          description: Creative created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Creative"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/ad-accounts/{accountID}/hierarchy:
+    get:
+      tags: [Catalog]
+      summary: Get a complete normalized account hierarchy
+      operationId: getAdAccountHierarchy
+      parameters:
+        - name: accountID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Account hierarchy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountHierarchy"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+components:
+  headers:
+    RequestID:
+      description: Request correlation ID
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Entity not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: Entity already exists
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+  schemas:
+    ProviderData:
+      type: object
+      additionalProperties: true
+    Status:
+      type: string
+      enum: [active, paused, archived]
+    Platform:
+      type: string
+      enum: [meta, tiktok, google]
+    HealthResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [up, down]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [up, down]
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+    EntityBase:
+      type: object
+      required: [id, external_id, name, provider_data, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        external_id: { type: string }
+        name: { type: string }
+        provider_data: { $ref: "#/components/schemas/ProviderData" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdAccount:
+      allOf:
+        - $ref: "#/components/schemas/EntityBase"
+        - type: object
+          required: [platform, currency, timezone, status]
+          properties:
+            platform: { $ref: "#/components/schemas/Platform" }
+            currency: { type: string, minLength: 3, maxLength: 3 }
+            timezone: { type: string }
+            status: { $ref: "#/components/schemas/Status" }
+    Campaign:
+      allOf:
+        - $ref: "#/components/schemas/EntityBase"
+        - type: object
+          required: [account_id, objective, status]
+          properties:
+            account_id: { type: string, format: uuid }
+            objective: { type: string }
+            status: { $ref: "#/components/schemas/Status" }
+    AdGroup:
+      allOf:
+        - $ref: "#/components/schemas/EntityBase"
+        - type: object
+          required: [campaign_id, status]
+          properties:
+            campaign_id: { type: string, format: uuid }
+            status: { $ref: "#/components/schemas/Status" }
+    Ad:
+      allOf:
+        - $ref: "#/components/schemas/EntityBase"
+        - type: object
+          required: [ad_group_id, status]
+          properties:
+            ad_group_id: { type: string, format: uuid }
+            status: { $ref: "#/components/schemas/Status" }
+    Creative:
+      allOf:
+        - $ref: "#/components/schemas/EntityBase"
+        - type: object
+          required: [ad_id, format, asset_url]
+          properties:
+            ad_id: { type: string, format: uuid }
+            format: { type: string }
+            asset_url: { type: string }
+    CreateAdAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [platform, external_id, name, currency, timezone, status]
+      properties:
+        platform: { $ref: "#/components/schemas/Platform" }
+        external_id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        timezone: { type: string, minLength: 1 }
+        status: { $ref: "#/components/schemas/Status" }
+        provider_data: { $ref: "#/components/schemas/ProviderData" }
+    CreateCampaignRequest:
+      type: object
+      additionalProperties: false
+      required: [account_id, external_id, name, status]
+      properties:
+        account_id: { type: string, format: uuid }
+        external_id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        objective: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        provider_data: { $ref: "#/components/schemas/ProviderData" }
+    CreateAdGroupRequest:
+      type: object
+      additionalProperties: false
+      required: [campaign_id, external_id, name, status]
+      properties:
+        campaign_id: { type: string, format: uuid }
+        external_id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        status: { $ref: "#/components/schemas/Status" }
+        provider_data: { $ref: "#/components/schemas/ProviderData" }
+    CreateAdRequest:
+      type: object
+      additionalProperties: false
+      required: [ad_group_id, external_id, name, status]
+      properties:
+        ad_group_id: { type: string, format: uuid }
+        external_id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        status: { $ref: "#/components/schemas/Status" }
+        provider_data: { $ref: "#/components/schemas/ProviderData" }
+    CreateCreativeRequest:
+      type: object
+      additionalProperties: false
+      required: [ad_id, external_id, name, format]
+      properties:
+        ad_id: { type: string, format: uuid }
+        external_id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        format: { type: string, minLength: 1 }
+        asset_url: { type: string }
+        provider_data: { $ref: "#/components/schemas/ProviderData" }
+    AccountHierarchy:
+      type: object
+      required: [account, campaigns]
+      properties:
+        account: { $ref: "#/components/schemas/AdAccount" }
+        campaigns:
+          type: array
+          items:
+            type: object
+            required: [campaign, ad_groups]
+            properties:
+              campaign: { $ref: "#/components/schemas/Campaign" }
+              ad_groups:
+                type: array
+                items:
+                  type: object
+                  required: [ad_group, ads]
+                  properties:
+                    ad_group: { $ref: "#/components/schemas/AdGroup" }
+                    ads:
+                      type: array
+                      items:
+                        type: object
+                        required: [ad, creatives]
+                        properties:
+                          ad: { $ref: "#/components/schemas/Ad" }
+                          creatives:
+                            type: array
+                            items: { $ref: "#/components/schemas/Creative" }
