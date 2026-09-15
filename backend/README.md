@@ -56,6 +56,10 @@ The default endpoints are:
 - `POST /api/v1/ads` — create an ad.
 - `POST /api/v1/creatives` — create a creative.
 - `GET /api/v1/ad-accounts/{accountID}/hierarchy` — read the complete account hierarchy.
+- `GET /api/v1/workflows` — list campaign automation workflows.
+- `POST /api/v1/workflows/bulk` — create one workflow per selected account.
+- `POST /api/v1/workflows/{workflowID}/transition` — apply a valid state transition.
+- `POST /api/v1/workflows/{workflowID}/metrics` — record metrics and advance a completed seed campaign.
 
 Example account request:
 
@@ -66,6 +70,16 @@ curl -X POST http://127.0.0.1:8080/api/v1/ad-accounts \
 ```
 
 Supported canonical platforms are `meta`, `tiktok`, and `google`. Supported entity statuses are `active`, `paused`, and `archived`.
+
+Create a workflow after creating an account:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/workflows/bulk \
+  -H "Content-Type: application/json" \
+  -d '{"organization_id":"local-testing","ad_account_ids":["ACCOUNT_UUID"],"page_external_id":"PAGE_ID","seed_spend_limit_usd":10}'
+```
+
+Workflow state and metrics are durable in PostgreSQL. Provider publish and budget operations remain fail-closed until validation and approval guardrails are implemented.
 
 ## Database migrations
 
@@ -92,5 +106,6 @@ make check
 - `internal/domain` contains framework-free advertising concepts.
 - `internal/application` contains use cases and the interfaces they consume.
 - `internal/adapter` contains Gin and PostgreSQL implementations.
+- `internal/adapter/meta` contains the guarded Meta Graph API connector foundation.
 - `internal/config` and `internal/logging` provide centralized infrastructure configuration.
 - `migrations` contains reviewed PostgreSQL schema changes and rollback files.

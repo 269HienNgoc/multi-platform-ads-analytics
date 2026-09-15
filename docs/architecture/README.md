@@ -11,10 +11,14 @@ backend/
 ├── internal/
 │   ├── app/                    # Composition root and lifecycle
 │   ├── domain/ads/             # Canonical, provider-neutral concepts
+│   ├── domain/automation/      # Workflow states and deterministic rules
 │   ├── application/catalog/    # Advertising hierarchy use cases and ports
+│   ├── application/automation/ # Durable workflow use cases and ports
+│   ├── application/connector/  # Provider connector contracts
 │   ├── application/health/     # Use case and consumed port
 │   ├── adapter/httpapi/        # Gin routes and middleware
 │   ├── adapter/postgres/       # GORM/PostgreSQL implementation
+│   ├── adapter/meta/           # Meta Graph API implementation
 │   ├── config/                 # Viper loading and validation
 │   └── logging/                # Zap construction and flushing
 ├── Makefile

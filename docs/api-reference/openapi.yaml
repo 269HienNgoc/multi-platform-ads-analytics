@@ -9,6 +9,7 @@ servers:
 tags:
   - name: Health
   - name: Catalog
+  - name: Automation
 paths:
   /health/live:
     get:
@@ -174,7 +175,113 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/workflows:
+    get:
+      tags: [Automation]
+      summary: List campaign automation workflows
+      operationId: listCampaignWorkflows
+      responses:
+        "200":
+          description: Stable workflow list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/CampaignWorkflow" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/workflows/bulk:
+    post:
+      tags: [Automation]
+      summary: Create one workflow per advertising account
+      operationId: createBulkCampaignWorkflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateBulkWorkflowRequest" }
+      responses:
+        "201":
+          description: Workflows created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, count]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/CampaignWorkflow" }
+                  count: { type: integer, minimum: 1 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/workflows/{workflowID}/transition:
+    post:
+      tags: [Automation]
+      summary: Apply an allowed workflow state transition
+      operationId: transitionCampaignWorkflow
+      parameters:
+        - $ref: "#/components/parameters/WorkflowID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                state: { $ref: "#/components/schemas/WorkflowState" }
+      responses:
+        "200":
+          description: Updated workflow
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/CampaignWorkflow" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/workflows/{workflowID}/metrics:
+    post:
+      tags: [Automation]
+      summary: Record metrics and advance a completed seed workflow
+      operationId: applyCampaignWorkflowMetrics
+      parameters:
+        - $ref: "#/components/parameters/WorkflowID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CampaignMetrics" }
+      responses:
+        "200":
+          description: Updated workflow
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/CampaignWorkflow" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
 components:
+  parameters:
+    WorkflowID:
+      name: workflowID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
   headers:
     RequestID:
       description: Request correlation ID
@@ -370,3 +477,72 @@ components:
                           creatives:
                             type: array
                             items: { $ref: "#/components/schemas/Creative" }
+    WorkflowState:
+      type: string
+      enum:
+        - ACCOUNT_CONNECTED
+        - ASSETS_SYNCED
+        - PREFLIGHT_PASSED
+        - SEED_PENDING
+        - SEED_CREATING
+        - SEED_RUNNING
+        - SEED_COMPLETED
+        - MAIN_PENDING
+        - MAIN_VALIDATING
+        - MAIN_CREATING
+        - MAIN_RUNNING
+        - PAUSED
+        - NEEDS_MANUAL_REVIEW
+        - FAILED
+    CampaignWorkflow:
+      type: object
+      required:
+        - id
+        - organization_id
+        - ad_account_id
+        - page_external_id
+        - seed_spend_limit_usd
+        - state
+        - created_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string }
+        ad_account_id: { type: string, format: uuid }
+        page_external_id: { type: string }
+        pixel_external_id: { type: string }
+        pixel_event: { type: string }
+        existing_post_id: { type: string }
+        seed_campaign_external_id: { type: string }
+        main_campaign_external_id: { type: string }
+        seed_spend_limit_usd: { type: number, exclusiveMinimum: 0 }
+        state: { $ref: "#/components/schemas/WorkflowState" }
+        last_error: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateBulkWorkflowRequest:
+      type: object
+      additionalProperties: false
+      required: [organization_id, ad_account_ids, page_external_id]
+      properties:
+        organization_id: { type: string, minLength: 1 }
+        ad_account_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        page_external_id: { type: string, minLength: 1 }
+        pixel_external_id: { type: string }
+        pixel_event: { type: string }
+        existing_post_id: { type: string }
+        seed_spend_limit_usd: { type: number, exclusiveMinimum: 0, default: 10 }
+    CampaignMetrics:
+      type: object
+      additionalProperties: false
+      properties:
+        spend_usd: { type: number, minimum: 0, default: 0 }
+        registrations: { type: integer, minimum: 0, default: 0 }
+        deposits: { type: integer, minimum: 0, default: 0 }
+        cost_per_registration: { type: number, minimum: 0, default: 0 }
+        cost_per_deposit: { type: number, minimum: 0, default: 0 }
+        captured_at: { type: string, format: date-time }
