@@ -210,7 +210,7 @@ func (c *Client) getAll(ctx context.Context, path string, baseQuery url.Values) 
 	query := cloneValues(baseQuery)
 	query.Set("limit", "100")
 	items := []json.RawMessage{}
-	for pageNumber := range maxPages {
+	for range maxPages {
 		var page graphPage
 		if err := c.get(ctx, path, query, &page); err != nil {
 			return nil, err
