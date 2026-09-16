@@ -36,7 +36,7 @@ Before any Go coding, review, debugging, troubleshooting, or setup task, load th
 Project requirements override community skill defaults when they conflict:
 
 - Use Clean Architecture with manual constructor injection. Keep the composition root in `backend/internal/app` and executable entry points minimal.
-- Load YAML configuration through Viper in `backend/internal/config`. Environment variables may override YAML, but application packages must not read environment variables directly.
+- Load all backend runtime configuration exclusively from YAML through Viper in `backend/internal/config`. Do not load `.env` files or override backend settings from environment variables.
 - Use Zap for structured logging. Do not use the standard `log` package or `log/slog` in backend application code.
 - Use GORM for PostgreSQL persistence. Do not use raw `database/sql`, `sqlx`, or direct driver queries in application code. Accessing GORM's underlying pool is allowed only inside the PostgreSQL adapter for pool configuration, ping, and shutdown.
 - Do not add Docker or Docker Compose assets unless the user explicitly changes this requirement.

@@ -21,7 +21,7 @@ To use another backend address, create `.env.local`:
 
 ```bash
 BACKEND_API_URL=http://127.0.0.1:8080
-BACKEND_API_KEY=the-same-value-as-ADS_SERVER_API_KEY
+BACKEND_API_KEY=the-same-value-as-server.api_key-in-backend-YAML
 ```
 
 Production additionally requires `FRONTEND_AUTH_USER` and `FRONTEND_AUTH_PASSWORD`. Serve production over HTTPS because the dashboard uses HTTP Basic authentication as its current operator-access layer. Backend credentials are attached only by the server-side Route Handler and are never returned to browser JavaScript.

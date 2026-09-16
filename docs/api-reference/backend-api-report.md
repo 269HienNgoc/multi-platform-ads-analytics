@@ -40,7 +40,7 @@ Hiện có **16 operation**: 2 operation kiểm tra sức khỏe, 7 operation ca
 ### Header
 
 - Request gửi JSON cần có `Content-Type: application/json`.
-- Các route `/api/v1/*` yêu cầu `X-API-Key` khi `ADS_SERVER_API_KEY` được cấu hình; production bắt buộc cấu hình khóa này.
+- Các route `/api/v1/*` yêu cầu `X-API-Key` khi `server.api_key` được cấu hình trong YAML; production bắt buộc cấu hình khóa này.
 - `POST /workflows/bulk` nhận `Idempotency-Key`. Nếu client không gửi, backend dùng `X-Request-ID` làm khóa cho lần gọi đó.
 - Client có thể gửi `X-Request-ID` gồm 1–64 ký tự chữ, số, `_` hoặc `-`.
 - Nếu `X-Request-ID` không hợp lệ hoặc bị thiếu, backend tự sinh ID mới.
@@ -318,7 +318,7 @@ Endpoint `metrics` nhận `spend_usd`, `registrations`, `deposits`, `cost_per_re
 
 ### Đồng bộ Meta read-only
 
-Khi `ADS_META_ENABLED=true`, worker chạy ngay lúc khởi động và lặp theo `ADS_META_SYNC_INTERVAL`. Đồng bộ dùng cursor pagination cho tất cả ad account, sau đó lấy campaign của từng account, upsert theo external ID và lưu raw payload để audit. Thiếu quyền Page hoặc Pixel được trả về dưới dạng cảnh báo và không làm mất kết quả Account/Campaign.
+Khi `meta.enabled: true` trong YAML, worker chạy ngay lúc khởi động và lặp theo `meta.sync_interval`. Đồng bộ dùng cursor pagination cho tất cả ad account, sau đó lấy campaign của từng account, upsert theo external ID và lưu raw payload để audit. Thiếu quyền Page hoặc Pixel được trả về dưới dạng cảnh báo và không làm mất kết quả Account/Campaign.
 
 Các thao tác tạo campaign, thay ngân sách và đọc insight vẫn fail-closed cho đến khi có preflight, approval và budget guardrail.
 
@@ -359,8 +359,8 @@ Migration PostgreSQL đã tạo các bảng sau nhưng router hiện chưa expos
 - API chưa có xác thực/phân quyền nên chỉ nên chạy ở local hoặc private network.
 - Middleware đã có request ID, panic recovery, access log Zap và security headers.
 - Response lỗi không làm lộ lỗi database hoặc stack trace.
-- Cấu hình production cần giữ PostgreSQL tại `127.0.0.1:5432` nếu backend và database cùng VPS; password chỉ đặt trong environment của VPS.
-- Không commit `.env` hoặc thông tin đăng nhập nền tảng quảng cáo.
+- Cấu hình production có thể giữ PostgreSQL tại `127.0.0.1:5432` nếu backend và database cùng VPS; password được đặt trong file YAML dành riêng cho deployment.
+- Không commit file YAML production hoặc thông tin đăng nhập nền tảng quảng cáo; giới hạn quyền đọc file cho tài khoản chạy dịch vụ.
 
 ## 9. Nguồn đối chiếu trong mã nguồn
 

@@ -6,16 +6,12 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
-
-const envPrefix = "ADS"
 
 // Config contains all runtime configuration for the API process.
 type Config struct {
@@ -77,19 +73,11 @@ type Log struct {
 	Encoding string `mapstructure:"encoding"`
 }
 
-// Load reads optional .env values, YAML configuration, and ADS_ environment overrides.
+// Load reads and validates the requested YAML configuration file.
 func Load(configFile string) (Config, error) {
-	if err := loadDotEnv(); err != nil {
-		return Config{}, err
-	}
-
 	v := viper.New()
-	setDefaults(v)
 	v.SetConfigFile(configFile)
 	v.SetConfigType("yaml")
-	v.SetEnvPrefix(envPrefix)
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
 
 	if err := v.ReadInConfig(); err != nil {
 		return Config{}, fmt.Errorf("reading configuration: %w", err)
@@ -150,55 +138,6 @@ func (d Database) DSN() string {
 	connectionURL.RawQuery = query.Encode()
 
 	return connectionURL.String()
-}
-
-func loadDotEnv() error {
-	_, err := os.Stat(".env")
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("checking .env: %w", err)
-	}
-	if err := godotenv.Load(); err != nil {
-		return fmt.Errorf("loading .env: %w", err)
-	}
-
-	return nil
-}
-
-func setDefaults(v *viper.Viper) {
-	v.SetDefault("app.name", "multi-platform-ads-analytics")
-	v.SetDefault("app.environment", "development")
-	v.SetDefault("server.address", "127.0.0.1:8080")
-	v.SetDefault("server.read_header_timeout", "5s")
-	v.SetDefault("server.read_timeout", "15s")
-	v.SetDefault("server.write_timeout", "30s")
-	v.SetDefault("server.idle_timeout", "60s")
-	v.SetDefault("server.shutdown_timeout", "15s")
-	v.SetDefault("server.max_header_bytes", 1<<20)
-	v.SetDefault("server.api_key", "")
-	v.SetDefault("database.host", "127.0.0.1")
-	v.SetDefault("database.port", 5432)
-	v.SetDefault("database.name", "multi_platform_ads")
-	v.SetDefault("database.user", "postgres")
-	v.SetDefault("database.password", "")
-	v.SetDefault("database.ssl_mode", "disable")
-	v.SetDefault("database.timezone", "UTC")
-	v.SetDefault("database.connect_timeout", "10s")
-	v.SetDefault("database.max_open_connections", 25)
-	v.SetDefault("database.max_idle_connections", 10)
-	v.SetDefault("database.connection_max_lifetime", "30m")
-	v.SetDefault("database.connection_max_idle_time", "5m")
-	v.SetDefault("database.slow_query_threshold", "500ms")
-	v.SetDefault("meta.enabled", false)
-	v.SetDefault("meta.base_url", "https://graph.facebook.com")
-	v.SetDefault("meta.version", "v24.0")
-	v.SetDefault("meta.access_token", "")
-	v.SetDefault("meta.timeout", "30s")
-	v.SetDefault("meta.sync_interval", "15m")
-	v.SetDefault("log.level", "info")
-	v.SetDefault("log.encoding", "json")
 }
 
 func (s Server) validate() error {

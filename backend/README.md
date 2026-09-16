@@ -10,9 +10,9 @@ Go API for multi-platform advertising analytics. The backend uses Clean Architec
 
 ## Configuration
 
-Copy `.env.example` to `.env` for local development and update the database values. Non-secret defaults live in `configs/config.yaml`. Environment variables use the `ADS_` prefix and override YAML values, for example `ADS_DATABASE_HOST` and `ADS_DATABASE_PASSWORD`.
+`configs/config.yaml` is the backend's single configuration source. Update that file for local development, or pass another YAML file with `-config /absolute/path/config.yaml` during deployment. The backend does not load `.env` files and does not override YAML values from environment variables.
 
-VPS credentials must be supplied through environment variables or the process manager. Do not commit passwords to YAML.
+The YAML file contains database credentials, the API key, and the Meta access token. Keep real production values in a deployment-specific file outside the repository, restrict its filesystem permissions, and never commit it.
 
 ## Run locally
 
@@ -25,11 +25,10 @@ git switch dev
 cd backend
 ```
 
-Create the local database once, then copy and update the environment file:
+Create the local database once, then update `configs/config.yaml`, especially `database.user` and `database.password`:
 
 ```bash
 createdb -U postgres multi_platform_ads
-cp .env.example .env
 ```
 
 Apply the versioned schema before starting the API:
@@ -86,7 +85,7 @@ curl -X POST http://127.0.0.1:8080/api/v1/workflows/bulk \
 
 Workflow state and metrics are durable in PostgreSQL. Provider publish and budget operations remain fail-closed until validation and approval guardrails are implemented.
 
-In production, configure `ADS_SERVER_API_KEY` and send it as `X-API-Key` for every `/api/v1/*` request. To enable the read-only Meta connector, set `ADS_META_ENABLED=true`, `ADS_META_ACCESS_TOKEN`, and the required version/base URL values. Never commit tokens.
+In production, set `server.api_key` in the deployment YAML and send the same value as `X-API-Key` for every `/api/v1/*` request. To enable the read-only Meta connector, set `meta.enabled: true`, `meta.access_token`, `meta.version`, and `meta.base_url` in that YAML. Never commit real keys or tokens.
 
 ## Database migrations
 
@@ -98,7 +97,7 @@ make migrate-up
 make migrate-down # rolls back one migration and can delete data
 ```
 
-Run only one migration process at a time during deployment. Database passwords belong in `.env` locally or VPS environment variables in production.
+Run only one migration process at a time during deployment. Pass the same protected YAML file to the migration and API processes so both use identical database settings.
 
 ## Validate
 

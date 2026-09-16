@@ -59,14 +59,6 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    env:
-      ADS_DATABASE_HOST: 127.0.0.1
-      ADS_DATABASE_PORT: 5432
-      ADS_DATABASE_NAME: multi_platform_ads
-      ADS_DATABASE_USER: postgres
-      ADS_DATABASE_PASSWORD: postgres
-      ADS_DATABASE_SSL_MODE: disable
-      ADS_LOG_LEVEL: error
 
     steps:
       - uses: actions/checkout@v6
@@ -79,6 +71,7 @@ jobs:
           sudo systemctl start postgresql.service
           sudo -u postgres psql --set ON_ERROR_STOP=1 --command "ALTER USER postgres WITH PASSWORD 'postgres'"
           sudo -u postgres createdb multi_platform_ads
+          sed -i 's/^  password: ""$/  password: postgres/' configs/config.yaml
       - name: Apply migrations
         run: go run ./cmd/migrate -config configs/config.yaml -migrations migrations -action up
       - name: Run API smoke test

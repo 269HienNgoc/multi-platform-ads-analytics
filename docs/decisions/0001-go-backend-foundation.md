@@ -15,7 +15,7 @@ The product must synchronize and analyze advertising data from multiple provider
 - Use Gin only in the HTTP adapter.
 - Use GORM only in PostgreSQL adapter packages. Domain entities do not contain GORM tags.
 - Use reviewed, versioned migrations rather than `AutoMigrate` during application startup.
-- Use Viper as the only configuration gateway. YAML provides non-secret defaults and `ADS_` environment variables provide deployment overrides.
+- Use Viper as the only configuration gateway. A YAML file selected with `-config` contains every backend runtime setting; `.env` files and environment overrides are not supported.
 - Use Zap for all structured application logs.
 - Run without Docker; connect to the PostgreSQL instance configured on the target VPS.
 
@@ -25,4 +25,5 @@ The product must synchronize and analyze advertising data from multiple provider
 - Persistence records require explicit mapping to and from domain entities.
 - Initial wiring is intentionally explicit; a DI framework should be considered only when manual wiring becomes difficult to maintain.
 - Configuration and logging conventions are enforceable from one package rather than duplicated throughout the codebase.
+- Deployment-specific YAML files can contain secrets, so they must live outside the repository and have restricted filesystem permissions.
 - The API can add a separate worker binary later without sharing process lifecycle state.
