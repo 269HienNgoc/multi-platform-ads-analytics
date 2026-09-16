@@ -17,7 +17,7 @@ import (
 const (
 	requestIDHeader = "X-Request-ID"
 	requestIDKey    = "request_id"
-	apiKeyHeader    = "X-API-Key"
+	apiKeyHeader    = "X-API-Key" // #nosec G101 -- HTTP header name, not a credential.
 )
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)

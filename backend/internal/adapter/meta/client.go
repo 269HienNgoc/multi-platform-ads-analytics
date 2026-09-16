@@ -210,7 +210,7 @@ func (c *Client) getAll(ctx context.Context, path string, baseQuery url.Values) 
 	query := cloneValues(baseQuery)
 	query.Set("limit", "100")
 	items := []json.RawMessage{}
-	for pageNumber := 0; pageNumber < maxPages; pageNumber++ {
+	for pageNumber := range maxPages {
 		var page graphPage
 		if err := c.get(ctx, path, query, &page); err != nil {
 			return nil, err
@@ -326,7 +326,7 @@ func (c *Client) do(req *http.Request, target any) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+c.accessToken)
 	const maxAttempts = 3
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		attemptRequest, err := requestForAttempt(req, attempt)
 		if err != nil {
 			return err
