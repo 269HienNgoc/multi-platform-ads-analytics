@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -13,7 +14,10 @@ import (
 	automationdomain "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/domain/automation"
 )
 
-var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+var (
+	uuidPattern       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	requestKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+)
 
 // ErrInvalidInput identifies an automation request that violates required invariants.
 var ErrInvalidInput = errors.New("automation: invalid input")
@@ -24,7 +28,7 @@ var ErrNotFound = errors.New("automation: not found")
 // Store is the persistence contract consumed by campaign workflow use cases.
 type Store interface {
 	List(context.Context) ([]automationdomain.CampaignWorkflow, error)
-	CreateBulk(context.Context, []automationdomain.CampaignWorkflow) error
+	Create(context.Context, automationdomain.CampaignWorkflow) (automationdomain.CampaignWorkflow, error)
 	Update(
 		context.Context,
 		string,
@@ -40,6 +44,7 @@ type Store interface {
 
 // CreateBulkInput describes one workflow template applied independently to many accounts.
 type CreateBulkInput struct {
+	RequestKey        string
 	OrganizationID    string
 	AdAccountIDs      []string
 	PageExternalID    string
@@ -47,6 +52,19 @@ type CreateBulkInput struct {
 	PixelEvent        string
 	ExistingPostID    string
 	SeedSpendLimitUSD float64
+}
+
+// CreateFailure reports an account-specific failure without rolling back successful accounts.
+type CreateFailure struct {
+	AdAccountID string `json:"ad_account_id"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+}
+
+// CreateBulkResult contains independently persisted workflows and account failures.
+type CreateBulkResult struct {
+	Workflows []automationdomain.CampaignWorkflow `json:"workflows"`
+	Failures  []CreateFailure                     `json:"failures"`
 }
 
 // Service implements provider-neutral campaign automation use cases.
@@ -77,23 +95,31 @@ func (s *Service) List(ctx context.Context) ([]automationdomain.CampaignWorkflow
 func (s *Service) CreateBulk(
 	ctx context.Context,
 	input CreateBulkInput,
-) ([]automationdomain.CampaignWorkflow, error) {
+) (CreateBulkResult, error) {
+	input.RequestKey = strings.TrimSpace(input.RequestKey)
 	input.OrganizationID = strings.TrimSpace(input.OrganizationID)
 	input.PageExternalID = strings.TrimSpace(input.PageExternalID)
 	input.PixelExternalID = strings.TrimSpace(input.PixelExternalID)
 	input.PixelEvent = strings.TrimSpace(input.PixelEvent)
 	input.ExistingPostID = strings.TrimSpace(input.ExistingPostID)
-	if input.OrganizationID == "" {
-		return nil, invalidField("organization_id")
+	if !requestKeyPattern.MatchString(input.RequestKey) {
+		return CreateBulkResult{}, invalidField("request_key")
 	}
-	if input.PageExternalID == "" {
-		return nil, invalidField("page_external_id")
+	if input.OrganizationID == "" || len(input.OrganizationID) > 255 {
+		return CreateBulkResult{}, invalidField("organization_id")
+	}
+	if input.PageExternalID == "" || len(input.PageExternalID) > 255 {
+		return CreateBulkResult{}, invalidField("page_external_id")
+	}
+	if len(input.PixelExternalID) > 255 || len(input.ExistingPostID) > 255 || len(input.PixelEvent) > 100 {
+		return CreateBulkResult{}, invalidField("provider assets")
 	}
 	if len(input.AdAccountIDs) == 0 {
-		return nil, invalidField("ad_account_ids")
+		return CreateBulkResult{}, invalidField("ad_account_ids")
 	}
-	if input.SeedSpendLimitUSD < 0 {
-		return nil, invalidField("seed_spend_limit_usd")
+	if math.IsNaN(input.SeedSpendLimitUSD) || math.IsInf(input.SeedSpendLimitUSD, 0) ||
+		input.SeedSpendLimitUSD < 0 || input.SeedSpendLimitUSD > 1_000_000 {
+		return CreateBulkResult{}, invalidField("seed_spend_limit_usd")
 	}
 	if input.SeedSpendLimitUSD == 0 {
 		input.SeedSpendLimitUSD = 10
@@ -101,35 +127,52 @@ func (s *Service) CreateBulk(
 
 	createdAt := s.now()
 	seenAccounts := make(map[string]struct{}, len(input.AdAccountIDs))
-	workflows := make([]automationdomain.CampaignWorkflow, 0, len(input.AdAccountIDs))
+	accountIDs := make([]string, 0, len(input.AdAccountIDs))
 	for _, rawAccountID := range input.AdAccountIDs {
 		accountID := strings.ToLower(strings.TrimSpace(rawAccountID))
 		if !uuidPattern.MatchString(accountID) {
-			return nil, invalidField("ad_account_ids")
+			return CreateBulkResult{}, invalidField("ad_account_ids")
 		}
 		if _, exists := seenAccounts[accountID]; exists {
-			return nil, invalidField("ad_account_ids")
+			return CreateBulkResult{}, invalidField("ad_account_ids")
 		}
 		seenAccounts[accountID] = struct{}{}
+		accountIDs = append(accountIDs, accountID)
+	}
 
+	result := CreateBulkResult{
+		Workflows: make([]automationdomain.CampaignWorkflow, 0, len(accountIDs)),
+		Failures:  []CreateFailure{},
+	}
+	for _, accountID := range accountIDs {
 		id, err := newUUID()
 		if err != nil {
-			return nil, fmt.Errorf("generating workflow id: %w", err)
+			return result, fmt.Errorf("generating workflow id: %w", err)
 		}
-		workflows = append(workflows, automationdomain.CampaignWorkflow{
-			ID: id, OrganizationID: input.OrganizationID, AdAccountID: accountID,
+		workflow := automationdomain.CampaignWorkflow{
+			ID: id, RequestKey: input.RequestKey,
+			OrganizationID: input.OrganizationID, AdAccountID: accountID,
 			PageExternalID: input.PageExternalID, PixelExternalID: input.PixelExternalID,
 			PixelEvent: input.PixelEvent, ExistingPostID: input.ExistingPostID,
-			SeedSpendLimitUSD: input.SeedSpendLimitUSD, State: automationdomain.StateSeedPending,
+			SeedSpendLimitUSD: input.SeedSpendLimitUSD, State: automationdomain.StateAccountConnected,
 			CreatedAt: createdAt, UpdatedAt: createdAt,
-		})
+		}
+		created, err := s.store.Create(ctx, workflow)
+		if errors.Is(err, ErrNotFound) {
+			result.Failures = append(result.Failures, CreateFailure{
+				AdAccountID: accountID,
+				Code:        "account_not_found",
+				Message:     "advertising account not found",
+			})
+			continue
+		}
+		if err != nil {
+			return result, fmt.Errorf("creating workflow for account %s: %w", accountID, err)
+		}
+		result.Workflows = append(result.Workflows, created)
 	}
 
-	if err := s.store.CreateBulk(ctx, workflows); err != nil {
-		return nil, fmt.Errorf("creating workflows: %w", err)
-	}
-
-	return workflows, nil
+	return result, nil
 }
 
 // Transition applies one valid explicit state transition.
@@ -165,13 +208,18 @@ func (s *Service) ApplyMetrics(
 	metrics automationdomain.CampaignMetrics,
 ) (automationdomain.CampaignWorkflow, error) {
 	id = strings.ToLower(strings.TrimSpace(id))
-	if !uuidPattern.MatchString(id) || metrics.SpendUSD < 0 || metrics.Registrations < 0 || metrics.Deposits < 0 ||
+	if !uuidPattern.MatchString(id) || !metricsAreFinite(metrics) || metrics.SpendUSD < 0 ||
+		metrics.Registrations < 0 || metrics.Deposits < 0 ||
 		metrics.CostPerRegistration < 0 || metrics.CostPerDeposit < 0 {
 		return automationdomain.CampaignWorkflow{}, invalidField("metrics")
 	}
 	if metrics.CapturedAt.IsZero() {
 		metrics.CapturedAt = s.now()
 	}
+	if metrics.CapturedAt.After(s.now().Add(5 * time.Minute)) {
+		return automationdomain.CampaignWorkflow{}, invalidField("captured_at")
+	}
+	metrics.CapturedAt = metrics.CapturedAt.UTC()
 
 	workflow, err := s.store.RecordMetrics(
 		ctx,
@@ -202,6 +250,21 @@ func (s *Service) ApplyMetrics(
 	}
 
 	return workflow, nil
+}
+
+func metricsAreFinite(metrics automationdomain.CampaignMetrics) bool {
+	values := []float64{
+		metrics.SpendUSD,
+		metrics.CostPerRegistration,
+		metrics.CostPerDeposit,
+	}
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func invalidField(field string) error {

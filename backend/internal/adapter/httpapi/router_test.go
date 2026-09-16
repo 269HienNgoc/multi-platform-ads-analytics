@@ -12,6 +12,7 @@ import (
 	applicationautomation "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/automation"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/catalog"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/health"
+	applicationprovidersync "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/application/providersync"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/config"
 	"github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/domain/ads"
 	automationdomain "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/domain/automation"
@@ -23,6 +24,7 @@ type healthPingerStub struct {
 }
 
 type catalogServiceStub struct {
+	listAccountsFn  func(context.Context) ([]ads.AdAccount, error)
 	createAccountFn func(context.Context, ads.AdAccount) (ads.AdAccount, error)
 	hierarchyFn     func(context.Context, string) (ads.AccountHierarchy, error)
 }
@@ -31,7 +33,26 @@ type automationServiceStub struct {
 	createBulkFn func(
 		context.Context,
 		applicationautomation.CreateBulkInput,
-	) ([]automationdomain.CampaignWorkflow, error)
+	) (applicationautomation.CreateBulkResult, error)
+}
+
+type providerSyncServiceStub struct {
+	syncCalls int
+}
+
+func (s *providerSyncServiceStub) Sync(
+	context.Context,
+) (applicationprovidersync.Run, applicationprovidersync.ApplyResult, error) {
+	s.syncCalls++
+
+	return applicationprovidersync.Run{}, applicationprovidersync.ApplyResult{}, nil
+}
+
+func (*providerSyncServiceStub) ListRuns(
+	context.Context,
+	int,
+) ([]applicationprovidersync.Run, error) {
+	return []applicationprovidersync.Run{}, nil
 }
 
 func (automationServiceStub) List(context.Context) ([]automationdomain.CampaignWorkflow, error) {
@@ -41,12 +62,20 @@ func (automationServiceStub) List(context.Context) ([]automationdomain.CampaignW
 func (s automationServiceStub) CreateBulk(
 	ctx context.Context,
 	input applicationautomation.CreateBulkInput,
-) ([]automationdomain.CampaignWorkflow, error) {
+) (applicationautomation.CreateBulkResult, error) {
 	if s.createBulkFn == nil {
-		return []automationdomain.CampaignWorkflow{}, nil
+		return applicationautomation.CreateBulkResult{Workflows: []automationdomain.CampaignWorkflow{}}, nil
 	}
 
 	return s.createBulkFn(ctx, input)
+}
+
+func (s catalogServiceStub) ListAccounts(ctx context.Context) ([]ads.AdAccount, error) {
+	if s.listAccountsFn == nil {
+		return []ads.AdAccount{}, nil
+	}
+
+	return s.listAccountsFn(ctx)
 }
 
 func (automationServiceStub) Transition(
@@ -131,6 +160,7 @@ func TestHealthRoutes(t *testing.T) {
 				service,
 				catalogServiceStub{},
 				automationServiceStub{},
+				nil,
 				zap.NewNop(),
 			)
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, test.path, nil)
@@ -173,6 +203,7 @@ func TestRequestIDValidation(t *testing.T) {
 				service,
 				catalogServiceStub{},
 				automationServiceStub{},
+				nil,
 				zap.NewNop(),
 			)
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health/live", nil)
@@ -190,6 +221,69 @@ func TestRequestIDValidation(t *testing.T) {
 			}
 			if actualRequestID != test.expectedRequestID {
 				t.Errorf("request id = %q, expected %q", actualRequestID, test.expectedRequestID)
+			}
+		})
+	}
+}
+
+func TestAPIKeyAuthentication(t *testing.T) {
+	t.Parallel()
+
+	cfg := testServerConfig()
+	cfg.APIKey = "test-secret"
+	server := NewServer(
+		cfg,
+		health.New(healthPingerStub{}),
+		catalogServiceStub{},
+		automationServiceStub{},
+		nil,
+		zap.NewNop(),
+	)
+
+	unauthorizedRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/ad-accounts", nil)
+	unauthorizedResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(unauthorizedResponse, unauthorizedRequest)
+	if unauthorizedResponse.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, expected %d", unauthorizedResponse.Code, http.StatusUnauthorized)
+	}
+
+	authorizedRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/ad-accounts", nil)
+	authorizedRequest.Header.Set(apiKeyHeader, "test-secret")
+	authorizedResponse := httptest.NewRecorder()
+	server.Handler.ServeHTTP(authorizedResponse, authorizedRequest)
+	if authorizedResponse.Code != http.StatusOK {
+		t.Errorf("status = %d, expected %d", authorizedResponse.Code, http.StatusOK)
+	}
+}
+
+func TestMetaConnectorStatusReflectsConfiguration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		service         ProviderSyncService
+		expectedEnabled string
+	}{
+		{name: "disabled", service: nil, expectedEnabled: `"enabled":false`},
+		{name: "enabled", service: &providerSyncServiceStub{}, expectedEnabled: `"enabled":true`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := NewServer(
+				testServerConfig(),
+				health.New(healthPingerStub{}),
+				catalogServiceStub{},
+				automationServiceStub{},
+				test.service,
+				zap.NewNop(),
+			)
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/connectors/meta", nil)
+			response := httptest.NewRecorder()
+			server.Handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), test.expectedEnabled) {
+				t.Errorf("status = %d, body = %s, expected %s", response.Code, response.Body.String(), test.expectedEnabled)
 			}
 		})
 	}
@@ -256,6 +350,7 @@ func TestCatalogRoutes(t *testing.T) {
 				healthService,
 				test.service,
 				automationServiceStub{},
+				nil,
 				zap.NewNop(),
 			)
 			request := httptest.NewRequestWithContext(t.Context(), test.method, test.path, strings.NewReader(test.body))
@@ -277,17 +372,18 @@ func TestAutomationRoutes(t *testing.T) {
 	automationStub := automationServiceStub{createBulkFn: func(
 		_ context.Context,
 		input applicationautomation.CreateBulkInput,
-	) ([]automationdomain.CampaignWorkflow, error) {
-		return []automationdomain.CampaignWorkflow{{
+	) (applicationautomation.CreateBulkResult, error) {
+		return applicationautomation.CreateBulkResult{Workflows: []automationdomain.CampaignWorkflow{{
 			ID: accountID, OrganizationID: input.OrganizationID, AdAccountID: input.AdAccountIDs[0],
-			State: automationdomain.StateSeedPending,
-		}}, nil
+			State: automationdomain.StateAccountConnected,
+		}}}, nil
 	}}
 	server := NewServer(
 		testServerConfig(),
 		health.New(healthPingerStub{}),
 		catalogServiceStub{},
 		automationStub,
+		nil,
 		zap.NewNop(),
 	)
 	request := httptest.NewRequestWithContext(
@@ -302,6 +398,44 @@ func TestAutomationRoutes(t *testing.T) {
 	server.Handler.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {
 		t.Errorf("status = %d, expected %d; body = %s", response.Code, http.StatusCreated, response.Body.String())
+	}
+}
+
+func TestAutomationRoutesPartialSuccess(t *testing.T) {
+	t.Parallel()
+
+	accountID := "00000000-0000-4000-8000-000000000001"
+	automationStub := automationServiceStub{createBulkFn: func(
+		_ context.Context,
+		_ applicationautomation.CreateBulkInput,
+	) (applicationautomation.CreateBulkResult, error) {
+		return applicationautomation.CreateBulkResult{
+			Workflows: []automationdomain.CampaignWorkflow{},
+			Failures: []applicationautomation.CreateFailure{{
+				AdAccountID: accountID, Code: "account_not_found", Message: "advertising account not found",
+			}},
+		}, nil
+	}}
+	server := NewServer(
+		testServerConfig(),
+		health.New(healthPingerStub{}),
+		catalogServiceStub{},
+		automationStub,
+		nil,
+		zap.NewNop(),
+	)
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/api/v1/workflows/bulk",
+		strings.NewReader(`{"organization_id":"org","ad_account_ids":["`+accountID+`"],"page_external_id":"page"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusMultiStatus {
+		t.Errorf("status = %d, expected %d; body = %s", response.Code, http.StatusMultiStatus, response.Body.String())
 	}
 }
 

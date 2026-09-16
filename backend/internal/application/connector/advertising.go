@@ -3,22 +3,46 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 
 	automationdomain "github.com/269HienNgoc/multi-platform-ads-analytics/backend/internal/domain/automation"
 )
 
 // ExternalAsset is a provider-owned object normalized for the application layer.
 type ExternalAsset struct {
-	ExternalID string `json:"external_id"`
-	Name       string `json:"name"`
-	Status     string `json:"status,omitempty"`
+	ExternalID string          `json:"external_id"`
+	Name       string          `json:"name"`
+	Status     string          `json:"status,omitempty"`
+	Raw        json.RawMessage `json:"-"`
+}
+
+// ExternalAdAccount is one provider account normalized for catalog persistence.
+type ExternalAdAccount struct {
+	ExternalID string          `json:"external_id"`
+	Name       string          `json:"name"`
+	Currency   string          `json:"currency"`
+	Timezone   string          `json:"timezone"`
+	Status     string          `json:"status"`
+	Raw        json.RawMessage `json:"-"`
+}
+
+// ExternalCampaign is one provider campaign and its owning external account.
+type ExternalCampaign struct {
+	AccountExternalID string          `json:"account_external_id"`
+	ExternalID        string          `json:"external_id"`
+	Name              string          `json:"name"`
+	Objective         string          `json:"objective"`
+	Status            string          `json:"status"`
+	Raw               json.RawMessage `json:"-"`
 }
 
 // AssetSnapshot contains assets visible through one provider connection.
 type AssetSnapshot struct {
-	AdAccounts []ExternalAsset `json:"ad_accounts"`
-	Pages      []ExternalAsset `json:"pages"`
-	Pixels     []ExternalAsset `json:"pixels"`
+	AdAccounts []ExternalAdAccount `json:"ad_accounts"`
+	Campaigns  []ExternalCampaign  `json:"campaigns"`
+	Pages      []ExternalAsset     `json:"pages"`
+	Pixels     []ExternalAsset     `json:"pixels"`
+	Warnings   []string            `json:"warnings,omitempty"`
 }
 
 // CreateSeedInput contains provider-neutral inputs for an engagement seed campaign.

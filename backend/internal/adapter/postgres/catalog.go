@@ -23,6 +23,7 @@ type accountRecord struct {
 	Timezone     string          `gorm:"column:timezone"`
 	Status       string          `gorm:"column:status"`
 	ProviderData json.RawMessage `gorm:"column:provider_data;type:jsonb"`
+	LastSyncedAt *time.Time      `gorm:"column:last_synced_at"`
 	CreatedAt    time.Time       `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt    time.Time       `gorm:"column:updated_at;autoUpdateTime"`
 }
@@ -37,6 +38,7 @@ type campaignRecord struct {
 	Objective    string          `gorm:"column:objective"`
 	Status       string          `gorm:"column:status"`
 	ProviderData json.RawMessage `gorm:"column:provider_data;type:jsonb"`
+	LastSyncedAt *time.Time      `gorm:"column:last_synced_at"`
 	CreatedAt    time.Time       `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt    time.Time       `gorm:"column:updated_at;autoUpdateTime"`
 }
@@ -93,6 +95,42 @@ func NewCatalogStore(client *Client) *CatalogStore {
 	return &CatalogStore{db: client.db}
 }
 
+// ListAccounts loads all accounts in a stable order.
+func (s *CatalogStore) ListAccounts(ctx context.Context) ([]ads.AdAccount, error) {
+	records := []accountRecord{}
+	if err := s.db.WithContext(ctx).Order("platform_code, name, id").Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("querying ad accounts: %w", err)
+	}
+	type campaignCount struct {
+		AccountID string `gorm:"column:account_id"`
+		Count     int64  `gorm:"column:count"`
+	}
+	counts := []campaignCount{}
+	if err := s.db.WithContext(ctx).
+		Model(&campaignRecord{}).
+		Select("account_id, COUNT(*) AS count").
+		Group("account_id").
+		Scan(&counts).Error; err != nil {
+		return nil, fmt.Errorf("counting account campaigns: %w", err)
+	}
+	countsByAccount := make(map[string]int64, len(counts))
+	for _, item := range counts {
+		countsByAccount[item.AccountID] = item.Count
+	}
+
+	accounts := make([]ads.AdAccount, 0, len(records))
+	for _, record := range records {
+		account, err := accountToDomain(record)
+		if err != nil {
+			return nil, err
+		}
+		account.CampaignCount = countsByAccount[account.ID]
+		accounts = append(accounts, account)
+	}
+
+	return accounts, nil
+}
+
 // CreateAccount persists a new advertising account.
 func (s *CatalogStore) CreateAccount(ctx context.Context, account *ads.AdAccount) error {
 	providerData, err := marshalProviderData(account.ProviderData)
@@ -103,6 +141,7 @@ func (s *CatalogStore) CreateAccount(ctx context.Context, account *ads.AdAccount
 		ID: account.ID, PlatformCode: string(account.Platform), ExternalID: account.ExternalID,
 		Name: account.Name, Currency: account.Currency, Timezone: account.Timezone,
 		Status: string(account.Status), ProviderData: providerData,
+		LastSyncedAt: account.LastSyncedAt,
 	}
 	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return translateWriteError(err)
@@ -122,6 +161,7 @@ func (s *CatalogStore) CreateCampaign(ctx context.Context, campaign *ads.Campaig
 	record := campaignRecord{
 		ID: campaign.ID, AccountID: campaign.AccountID, ExternalID: campaign.ExternalID,
 		Name: campaign.Name, Objective: campaign.Objective, Status: string(campaign.Status), ProviderData: providerData,
+		LastSyncedAt: campaign.LastSyncedAt,
 	}
 	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return translateWriteError(err)
@@ -344,7 +384,8 @@ func accountToDomain(record accountRecord) (ads.AdAccount, error) {
 		ID: record.ID, Platform: ads.Platform(record.PlatformCode), ExternalID: record.ExternalID,
 		Name: record.Name, Currency: record.Currency, Timezone: record.Timezone,
 		Status: ads.Status(record.Status), ProviderData: providerData,
-		CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
+		LastSyncedAt: record.LastSyncedAt,
+		CreatedAt:    record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}, nil
 }
 
@@ -358,6 +399,7 @@ func campaignToDomain(record campaignRecord) (ads.Campaign, error) {
 		ID: record.ID, AccountID: record.AccountID, ExternalID: record.ExternalID,
 		Name: record.Name, Objective: record.Objective, Status: ads.Status(record.Status),
 		ProviderData: providerData, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
+		LastSyncedAt: record.LastSyncedAt,
 	}, nil
 }
 

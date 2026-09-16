@@ -9,12 +9,21 @@ import (
 )
 
 type storeStub struct {
+	listAccountsFn   func(context.Context) ([]ads.AdAccount, error)
 	createAccountFn  func(context.Context, *ads.AdAccount) error
 	createCampaignFn func(context.Context, *ads.Campaign) error
 	createAdGroupFn  func(context.Context, *ads.AdGroup) error
 	createAdFn       func(context.Context, *ads.Ad) error
 	createCreativeFn func(context.Context, *ads.Creative) error
 	hierarchyFn      func(context.Context, string) (ads.AccountHierarchy, error)
+}
+
+func (s storeStub) ListAccounts(ctx context.Context) ([]ads.AdAccount, error) {
+	if s.listAccountsFn == nil {
+		return []ads.AdAccount{}, nil
+	}
+
+	return s.listAccountsFn(ctx)
 }
 
 func (s storeStub) CreateAccount(ctx context.Context, account *ads.AdAccount) error {

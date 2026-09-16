@@ -51,6 +51,32 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresAPIKeyInProduction(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Replace(validYAML(), "environment: test", "environment: production", 1)
+	_, err := Load(writeConfig(t, content))
+	if err == nil || !strings.Contains(err.Error(), "api key") {
+		t.Fatalf("Load() error = %v, expected production API key validation", err)
+	}
+}
+
+func TestLoadRejectsEnabledMetaWithoutToken(t *testing.T) {
+	t.Parallel()
+
+	content := validYAML() + `meta:
+  enabled: true
+  base_url: https://graph.facebook.com
+  version: v-test
+  timeout: 1s
+  sync_interval: 1m
+`
+	_, err := Load(writeConfig(t, content))
+	if err == nil || !strings.Contains(err.Error(), "access token") {
+		t.Fatalf("Load() error = %v, expected Meta token validation", err)
+	}
+}
+
 func TestDatabaseDSN(t *testing.T) {
 	t.Parallel()
 

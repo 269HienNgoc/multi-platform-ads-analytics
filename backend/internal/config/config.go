@@ -22,6 +22,7 @@ type Config struct {
 	App      App      `mapstructure:"app"`
 	Server   Server   `mapstructure:"server"`
 	Database Database `mapstructure:"database"`
+	Meta     Meta     `mapstructure:"meta"`
 	Log      Log      `mapstructure:"log"`
 }
 
@@ -40,6 +41,17 @@ type Server struct {
 	IdleTimeout       time.Duration `mapstructure:"idle_timeout"`
 	ShutdownTimeout   time.Duration `mapstructure:"shutdown_timeout"`
 	MaxHeaderBytes    int           `mapstructure:"max_header_bytes"`
+	APIKey            string        `mapstructure:"api_key"`
+}
+
+// Meta contains the read-only Marketing API connector configuration.
+type Meta struct {
+	Enabled      bool          `mapstructure:"enabled"`
+	BaseURL      string        `mapstructure:"base_url"`
+	Version      string        `mapstructure:"version"`
+	AccessToken  string        `mapstructure:"access_token"`
+	Timeout      time.Duration `mapstructure:"timeout"`
+	SyncInterval time.Duration `mapstructure:"sync_interval"`
 }
 
 // Database contains PostgreSQL and connection pool settings.
@@ -106,7 +118,13 @@ func (c Config) Validate() error {
 	if err := c.Server.validate(); err != nil {
 		return err
 	}
+	if c.App.Environment == "production" && strings.TrimSpace(c.Server.APIKey) == "" {
+		return errors.New("server api key is required in production")
+	}
 	if err := c.Database.validate(); err != nil {
+		return err
+	}
+	if err := c.Meta.validate(c.App.Environment); err != nil {
 		return err
 	}
 	if err := c.Log.validate(); err != nil {
@@ -159,6 +177,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.idle_timeout", "60s")
 	v.SetDefault("server.shutdown_timeout", "15s")
 	v.SetDefault("server.max_header_bytes", 1<<20)
+	v.SetDefault("server.api_key", "")
 	v.SetDefault("database.host", "127.0.0.1")
 	v.SetDefault("database.port", 5432)
 	v.SetDefault("database.name", "multi_platform_ads")
@@ -172,6 +191,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.connection_max_lifetime", "30m")
 	v.SetDefault("database.connection_max_idle_time", "5m")
 	v.SetDefault("database.slow_query_threshold", "500ms")
+	v.SetDefault("meta.enabled", false)
+	v.SetDefault("meta.base_url", "https://graph.facebook.com")
+	v.SetDefault("meta.version", "v24.0")
+	v.SetDefault("meta.access_token", "")
+	v.SetDefault("meta.timeout", "30s")
+	v.SetDefault("meta.sync_interval", "15m")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.encoding", "json")
 }
@@ -215,6 +240,30 @@ func (d Database) validate() error {
 	}
 	if d.SlowQueryThreshold <= 0 {
 		return errors.New("database slow query threshold must be positive")
+	}
+
+	return nil
+}
+
+func (m Meta) validate(environment string) error {
+	if !m.Enabled {
+		return nil
+	}
+	baseURL, err := url.Parse(strings.TrimSpace(m.BaseURL))
+	if err != nil || baseURL.Host == "" || (baseURL.Scheme != "http" && baseURL.Scheme != "https") {
+		return errors.New("meta base url must be an absolute http or https url")
+	}
+	if environment == "production" && baseURL.Scheme != "https" {
+		return errors.New("meta base url must use https in production")
+	}
+	if strings.Trim(strings.TrimSpace(m.Version), "/") == "" {
+		return errors.New("meta graph version is required")
+	}
+	if strings.TrimSpace(m.AccessToken) == "" {
+		return errors.New("meta access token is required when connector is enabled")
+	}
+	if m.Timeout <= 0 || m.SyncInterval <= 0 {
+		return errors.New("meta timeout and sync interval must be positive")
 	}
 
 	return nil

@@ -16,6 +16,7 @@ func NewServer(
 	healthService *health.Service,
 	catalogUseCases catalogService,
 	automationUseCases automationService,
+	providerSyncUseCases ProviderSyncService,
 	logger *zap.Logger,
 ) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
@@ -33,6 +34,8 @@ func NewServer(
 
 	catalogHandler := newCatalogHandler(catalogUseCases, logger)
 	api := router.Group("/api/v1")
+	api.Use(apiKeyMiddleware(cfg.APIKey))
+	api.GET("/ad-accounts", catalogHandler.listAccounts)
 	api.POST("/ad-accounts", catalogHandler.createAccount)
 	api.POST("/campaigns", catalogHandler.createCampaign)
 	api.POST("/ad-groups", catalogHandler.createAdGroup)
@@ -45,6 +48,11 @@ func NewServer(
 	api.POST("/workflows/bulk", automationHandler.createBulkWorkflows)
 	api.POST("/workflows/:workflowID/transition", automationHandler.transitionWorkflow)
 	api.POST("/workflows/:workflowID/metrics", automationHandler.applyMetrics)
+
+	providerSyncHandler := newProviderSyncHandler(providerSyncUseCases, logger)
+	api.GET("/connectors/meta", providerSyncHandler.status)
+	api.POST("/connectors/meta/sync", providerSyncHandler.sync)
+	api.GET("/connectors/meta/sync-runs", providerSyncHandler.listRuns)
 
 	return &http.Server{
 		Addr:              cfg.Address,

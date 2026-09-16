@@ -10,6 +10,8 @@ server:
   idle_timeout: 60s
   shutdown_timeout: 15s
   max_header_bytes: 1048576
+  # Set ADS_SERVER_API_KEY in production. Keep empty for local development only.
+  api_key: ""
 
 database:
   host: 127.0.0.1
@@ -24,6 +26,15 @@ database:
   connection_max_lifetime: 30m
   connection_max_idle_time: 5m
   slow_query_threshold: 500ms
+
+meta:
+  enabled: false
+  base_url: https://graph.facebook.com
+  version: v24.0
+  # Configure with ADS_META_ACCESS_TOKEN. Never commit a real token.
+  access_token: ""
+  timeout: 30s
+  sync_interval: 15m
 
 log:
   level: debug

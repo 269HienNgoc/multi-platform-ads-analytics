@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   Plus,
   Rocket,
+  RefreshCw,
   Search,
   Settings,
   Sparkles,
@@ -27,23 +28,30 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { APIRequestError, createAdAccount, createBulkWorkflows, getBackendReadiness } from "@/lib/api";
 import {
-  initialAccounts,
+  APIRequestError,
+  createAdAccount,
+  createBulkWorkflows,
+  getBackendReadiness,
+  getMetaConnectorStatus,
+  listAdAccounts,
+  syncMeta,
+} from "@/lib/api";
+import {
   metrics,
   performanceSeries,
   tasks,
   workflow,
   type DashboardAccount,
 } from "@/lib/dashboard-data";
-import type { CreateAdAccountInput, Platform } from "@/types/ads";
+import type { AdAccount, CreateAdAccountInput, Platform } from "@/types/ads";
 
 const navigation = [
   { label: "Tổng quan", icon: Gauge, href: "#overview" },
-  { label: "Tài khoản quảng cáo", icon: WalletCards, href: "#accounts", count: 24 },
-  { label: "Chiến dịch", icon: Target, href: "#campaigns", count: 37 },
+  { label: "Tài khoản quảng cáo", icon: WalletCards, href: "#accounts" },
+  { label: "Chiến dịch", icon: Target, href: "#campaigns" },
   { label: "Thư viện nội dung", icon: Layers3, href: "#creative" },
   { label: "Phân tích AI", icon: Bot, href: "#ai" },
 ];
@@ -55,6 +63,22 @@ const platformMeta: Record<Platform, { short: string; name: string }> = {
 };
 
 type BackendState = "checking" | "connected" | "offline";
+type ConnectorState = "checking" | "enabled" | "disabled" | "unknown";
+
+function toDashboardAccount(account: AdAccount): DashboardAccount {
+  return {
+    id: account.id,
+    name: account.name,
+    platform: account.platform,
+    externalID: account.external_id,
+    status: account.status === "active" ? "Đang chạy" : "Tạm dừng",
+    campaigns: account.campaign_count ?? 0,
+    spend: "—",
+    roas: "—",
+    change: account.last_synced_at ? "Đã đồng bộ" : "Thủ công",
+    phase: "Camp mồi",
+  };
+}
 
 function moneyPoint(value: number, index: number, maxValue: number) {
   const width = 720;
@@ -159,18 +183,7 @@ function AddAccountDialog({
 
     try {
       const created = await createAdAccount(input);
-      onCreated({
-        id: created.id,
-        name: created.name,
-        platform: created.platform,
-        externalID: created.external_id,
-        status: "Đang chạy",
-        campaigns: 0,
-        spend: "₫0",
-        roas: "—",
-        change: "Mới",
-        phase: "Camp mồi",
-      });
+      onCreated(toDashboardAccount(created));
       setMessage({ type: "success", text: `Đã thêm “${created.name}” vào backend.` });
       formElement.reset();
     } catch (error) {
@@ -254,6 +267,7 @@ function WorkflowDrawer({
   const [selectedAccountIDs, setSelectedAccountIDs] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string }>();
+  const requestKey = useRef("");
 
   if (!open) return null;
 
@@ -274,6 +288,7 @@ function WorkflowDrawer({
     setMessage(undefined);
     const form = new FormData(event.currentTarget);
     try {
+      if (!requestKey.current) requestKey.current = crypto.randomUUID();
       const result = await createBulkWorkflows({
         organization_id: String(form.get("organization_id")),
         ad_account_ids: selectedAccountIDs,
@@ -282,8 +297,12 @@ function WorkflowDrawer({
         pixel_event: String(form.get("pixel_event")),
         existing_post_id: String(form.get("existing_post_id")),
         seed_spend_limit_usd: Number(form.get("seed_spend_limit_usd")),
-      });
-      setMessage({ type: "success", text: `Đã tạo ${result.count} workflow ở trạng thái SEED_PENDING.` });
+      }, requestKey.current);
+      if (result.failures.length === 0) requestKey.current = "";
+      const failureText = result.failures.length > 0
+        ? ` ${result.failures.length} tài khoản không tạo được và không ảnh hưởng các tài khoản còn lại.`
+        : "";
+      setMessage({ type: "success", text: `Đã tạo ${result.count} workflow để kiểm tra tài khoản và tài sản.${failureText}` });
     } catch (error) {
       const text = error instanceof APIRequestError && error.status === 404
         ? "Có tài khoản không còn tồn tại trong backend. Hãy tạo lại tài khoản."
@@ -323,15 +342,15 @@ function WorkflowDrawer({
         <ol className="setup-steps">
           <li className="step-complete">
             <span className="step-number"><Check size={16} /></span>
-            <div><strong>Kiểm tra tài khoản</strong><p>Page, pixel Purchase và phương thức thanh toán đã sẵn sàng.</p></div>
+            <div><strong>Chọn tài khoản</strong><p>Đã chọn {selectedAccountIDs.length} tài khoản có trong catalog backend.</p></div>
           </li>
           <li className="step-active">
             <span className="step-number">2</span>
-            <div><strong>Cấu hình Camp mồi</strong><p>Chọn bài viết có sẵn, vị trí Việt Nam + 40 km và ngân sách $10.</p></div>
+            <div><strong>Cấu hình workflow</strong><p>Nhập Page, Pixel, bài viết và ngưỡng chi tiêu để chuẩn bị preflight.</p></div>
           </li>
           <li>
             <span className="step-number">3</span>
-            <div><strong>Chuẩn bị Conversion</strong><p>Pixel, event, 2–3 ad set và 2–3 creative cho mỗi ad set.</p></div>
+            <div><strong>Duyệt trước khi publish</strong><p>Workflow chưa tạo campaign thật trên Meta cho đến khi có preflight và phê duyệt.</p></div>
           </li>
         </ol>
         <form onSubmit={submit}>
@@ -370,10 +389,27 @@ export function Dashboard() {
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const [backendState, setBackendState] = useState<BackendState>("checking");
+  const [connectorState, setConnectorState] = useState<ConnectorState>("checking");
+  const [syncingMeta, setSyncingMeta] = useState(false);
+  const [dataMessage, setDataMessage] = useState("");
   const [period, setPeriod] = useState("14 ngày");
   const [platform, setPlatform] = useState<"all" | Platform>("all");
   const [query, setQuery] = useState("");
-  const [accounts, setAccounts] = useState(initialAccounts);
+  const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
+
+  async function loadCatalog(signal?: AbortSignal) {
+    const response = await listAdAccounts(signal);
+    setAccounts(response.data.map(toDashboardAccount));
+  }
+
+  async function loadConnectorStatus(signal?: AbortSignal) {
+    try {
+      const response = await getMetaConnectorStatus(signal);
+      setConnectorState(response.data.enabled ? "enabled" : "disabled");
+    } catch {
+      if (!signal?.aborted) setConnectorState("unknown");
+    }
+  }
 
   async function checkBackend() {
     setBackendState("checking");
@@ -381,7 +417,18 @@ export function Dashboard() {
     const timeout = window.setTimeout(() => controller.abort(), 4500);
     try {
       const result = await getBackendReadiness(controller.signal);
-      setBackendState(result.status === "up" ? "connected" : "offline");
+      if (result.status !== "up") {
+        setBackendState("offline");
+        return;
+      }
+      setBackendState("connected");
+      const [catalogResult] = await Promise.allSettled([
+        loadCatalog(controller.signal),
+        loadConnectorStatus(controller.signal),
+      ]);
+      setDataMessage(catalogResult.status === "rejected"
+        ? "Backend hoạt động nhưng chưa tải được danh sách tài khoản. Kiểm tra BACKEND_API_KEY của frontend."
+        : "");
     } catch {
       setBackendState("offline");
     } finally {
@@ -393,7 +440,20 @@ export function Dashboard() {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 4500);
     void getBackendReadiness(controller.signal)
-      .then((result) => setBackendState(result.status === "up" ? "connected" : "offline"))
+      .then(async (result) => {
+        if (result.status !== "up") {
+          setBackendState("offline");
+          return;
+        }
+        setBackendState("connected");
+        const [catalogResult] = await Promise.allSettled([
+          loadCatalog(controller.signal),
+          loadConnectorStatus(controller.signal),
+        ]);
+        if (catalogResult.status === "rejected" && !controller.signal.aborted) {
+          setDataMessage("Backend hoạt động nhưng chưa tải được danh sách tài khoản. Kiểm tra BACKEND_API_KEY của frontend.");
+        }
+      })
       .catch(() => setBackendState("offline"))
       .finally(() => window.clearTimeout(timeout));
 
@@ -402,6 +462,33 @@ export function Dashboard() {
       window.clearTimeout(timeout);
     };
   }, []);
+
+  async function synchronizeMeta() {
+    setSyncingMeta(true);
+    setDataMessage("");
+    try {
+      const response = await syncMeta();
+      await loadCatalog();
+      const warningText = response.summary.warnings?.length
+        ? ` Có ${response.summary.warnings.length} cảnh báo quyền Page/Pixel.`
+        : "";
+      setDataMessage(
+        `Đã đồng bộ ${response.summary.accounts} tài khoản và ${response.summary.campaigns} chiến dịch từ Meta.${warningText}`,
+      );
+    } catch (error) {
+      const text = error instanceof APIRequestError && error.status === 503
+        ? "Meta connector chưa được cấu hình trên backend."
+        : "Không thể đồng bộ Meta. Kiểm tra access token, quyền và lịch sử sync.";
+      setDataMessage(text);
+    } finally {
+      setSyncingMeta(false);
+    }
+  }
+
+  const totalCampaigns = useMemo(
+    () => accounts.reduce((total, account) => total + account.campaigns, 0),
+    [accounts],
+  );
 
   const filteredAccounts = useMemo(() => accounts.filter((account) => {
     const matchesPlatform = platform === "all" || account.platform === platform;
@@ -425,7 +512,6 @@ export function Dashboard() {
               <a className={index === 0 ? "active" : ""} href={item.href} key={item.label} onClick={() => setMenuOpen(false)}>
                 <Icon size={19} />
                 <span>{item.label}</span>
-                {item.count && <b>{item.count}</b>}
               </a>
             );
           })}
@@ -466,7 +552,7 @@ export function Dashboard() {
               )}
             </div>
             <button className="button button-quiet top-quiet" type="button" onClick={() => setAddAccountOpen(true)}><Plus size={17} /> Thêm tài khoản</button>
-            <button className="button button-primary" type="button" onClick={() => setWorkflowOpen(true)}><Rocket size={17} /> Tạo chiến dịch</button>
+            <button className="button button-primary" type="button" onClick={() => setWorkflowOpen(true)}><Rocket size={17} /> Tạo workflow</button>
           </div>
         </header>
 
@@ -475,7 +561,7 @@ export function Dashboard() {
             <div>
               <p className="today">Thứ Ba, 15 tháng 9</p>
               <h1>Chào buổi sáng, Hiển.</h1>
-              <p>Bạn đang có <strong>17 chiến dịch hoạt động</strong> trên 24 tài khoản.</p>
+              <p>Catalog hiện có <strong>{totalCampaigns} chiến dịch</strong> trên {accounts.length} tài khoản.</p>
             </div>
             <div className="period-control" aria-label="Khoảng thời gian">
               {["7 ngày", "14 ngày", "30 ngày"].map((item) => (
@@ -486,8 +572,19 @@ export function Dashboard() {
           </section>
 
           <section className="data-note" aria-label="Trạng thái dữ liệu">
-            <span>Dữ liệu mô phỏng</span>
-            <p>Backend chưa có endpoint đọc metrics và danh sách tài khoản. Kết nối thật đã sẵn sàng cho Health và Thêm tài khoản.</p>
+            <span>{connectorState === "enabled" ? "Meta read-only" : "Metrics mô phỏng"}</span>
+            <p>{dataMessage || "Tài khoản và số chiến dịch lấy từ backend; các chỉ số hiệu suất vẫn là dữ liệu mô phỏng."}</p>
+            <div className="data-note-actions">
+              <button
+                className="button button-quiet"
+                type="button"
+                onClick={() => void synchronizeMeta()}
+                disabled={backendState !== "connected" || connectorState !== "enabled" || syncingMeta}
+              >
+                <RefreshCw size={14} className={syncingMeta ? "spin" : undefined} />
+                {syncingMeta ? "Đang đồng bộ…" : "Đồng bộ Meta"}
+              </button>
+            </div>
           </section>
 
           <section className="metric-ribbon" aria-label="Chỉ số tổng quan">
@@ -556,7 +653,13 @@ export function Dashboard() {
                       <td><button className="icon-button table-menu" type="button" aria-label={`Mở thao tác cho ${account.name}`}><MoreHorizontal size={18} /></button></td>
                     </tr>
                   ))}
-                  {filteredAccounts.length === 0 && <tr><td colSpan={7} className="empty-row">Không tìm thấy tài khoản phù hợp.</td></tr>}
+                  {filteredAccounts.length === 0 && (
+                    <tr><td colSpan={7} className="empty-row">
+                      {accounts.length === 0
+                        ? "Chưa có tài khoản. Cấu hình Meta rồi đồng bộ, hoặc thêm tài khoản thủ công."
+                        : "Không tìm thấy tài khoản phù hợp."}
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -582,7 +685,11 @@ export function Dashboard() {
       </main>
 
       {menuOpen && <button className="mobile-overlay" type="button" onClick={() => setMenuOpen(false)} aria-label="Đóng menu" />}
-      <AddAccountDialog open={addAccountOpen} onClose={() => setAddAccountOpen(false)} onCreated={(account) => setAccounts((current) => [account, ...current])} />
+      <AddAccountDialog
+        open={addAccountOpen}
+        onClose={() => setAddAccountOpen(false)}
+        onCreated={(account) => setAccounts((current) => [account, ...current.filter((item) => item.id !== account.id)])}
+      />
       <WorkflowDrawer
         open={workflowOpen}
         onClose={() => setWorkflowOpen(false)}

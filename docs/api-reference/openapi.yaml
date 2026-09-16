@@ -6,13 +6,17 @@ info:
 servers:
   - url: http://127.0.0.1:8080
     description: Local backend
+security:
+  - ApiKeyAuth: []
 tags:
   - name: Health
   - name: Catalog
   - name: Automation
+  - name: Connectors
 paths:
   /health/live:
     get:
+      security: []
       tags: [Health]
       summary: Check process liveness
       operationId: getLiveness
@@ -28,6 +32,7 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
   /health/ready:
     get:
+      security: []
       tags: [Health]
       summary: Check PostgreSQL readiness
       operationId: getReadiness
@@ -45,6 +50,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
   /api/v1/ad-accounts:
+    get:
+      tags: [Catalog]
+      summary: List normalized advertising accounts
+      operationId: listAdAccounts
+      responses:
+        "200":
+          description: Stable account list with campaign counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdAccount" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
     post:
       tags: [Catalog]
       summary: Create an advertising account
@@ -198,6 +221,12 @@ paths:
       tags: [Automation]
       summary: Create one workflow per advertising account
       operationId: createBulkCampaignWorkflows
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Stable key used to safely retry this bulk operation.
+          schema: { type: string, minLength: 1, maxLength: 128 }
       requestBody:
         required: true
         content:
@@ -210,15 +239,84 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data, count]
+                required: [data, count, failures]
                 properties:
                   data:
                     type: array
                     items: { $ref: "#/components/schemas/CampaignWorkflow" }
                   count: { type: integer, minimum: 1 }
+                  failures:
+                    type: array
+                    items: { $ref: "#/components/schemas/BulkWorkflowFailure" }
+        "207":
+          description: Some account workflows were created and others failed independently
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkWorkflowResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/connectors/meta:
+    get:
+      tags: [Connectors]
+      summary: Read Meta connector availability and safety mode
+      operationId: getMetaConnectorStatus
+      responses:
+        "200":
+          description: Connector status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [platform, enabled, mode]
+                    properties:
+                      platform: { type: string, const: meta }
+                      enabled: { type: boolean }
+                      mode: { type: string, const: read_only }
+  /api/v1/connectors/meta/sync:
+    post:
+      tags: [Connectors]
+      summary: Synchronize all visible Meta accounts and campaigns
+      operationId: synchronizeMeta
+      responses:
+        "200":
+          description: Completed synchronization
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, summary]
+                properties:
+                  data: { $ref: "#/components/schemas/SyncRun" }
+                  summary: { $ref: "#/components/schemas/SyncSummary" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/v1/connectors/meta/sync-runs:
+    get:
+      tags: [Connectors]
+      summary: List recent Meta synchronization runs
+      operationId: listMetaSyncRuns
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Recent synchronization runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/SyncRun" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /api/v1/workflows/{workflowID}/transition:
     post:
       tags: [Automation]
@@ -276,6 +374,11 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
   parameters:
     WorkflowID:
       name: workflowID
@@ -288,6 +391,11 @@ components:
       schema:
         type: string
   responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
     BadRequest:
       description: Invalid request
       content:
@@ -305,6 +413,16 @@ components:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
     InternalError:
       description: Internal server error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    BadGateway:
+      description: Advertising provider synchronization failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ServiceUnavailable:
+      description: Connector is not configured
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -354,12 +472,14 @@ components:
       allOf:
         - $ref: "#/components/schemas/EntityBase"
         - type: object
-          required: [platform, currency, timezone, status]
+          required: [platform, currency, timezone, status, campaign_count]
           properties:
             platform: { $ref: "#/components/schemas/Platform" }
             currency: { type: string, minLength: 3, maxLength: 3 }
             timezone: { type: string }
             status: { $ref: "#/components/schemas/Status" }
+            campaign_count: { type: integer, minimum: 0 }
+            last_synced_at: { type: string, format: date-time }
     Campaign:
       allOf:
         - $ref: "#/components/schemas/EntityBase"
@@ -498,6 +618,7 @@ components:
       type: object
       required:
         - id
+        - request_key
         - organization_id
         - ad_account_id
         - page_external_id
@@ -507,6 +628,7 @@ components:
         - updated_at
       properties:
         id: { type: string, format: uuid }
+        request_key: { type: string }
         organization_id: { type: string }
         ad_account_id: { type: string, format: uuid }
         page_external_id: { type: string }
@@ -546,3 +668,45 @@ components:
         cost_per_registration: { type: number, minimum: 0, default: 0 }
         cost_per_deposit: { type: number, minimum: 0, default: 0 }
         captured_at: { type: string, format: date-time }
+    BulkWorkflowFailure:
+      type: object
+      required: [ad_account_id, code, message]
+      properties:
+        ad_account_id: { type: string, format: uuid }
+        code: { type: string }
+        message: { type: string }
+    BulkWorkflowResponse:
+      type: object
+      required: [data, count, failures]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/CampaignWorkflow" }
+        count: { type: integer, minimum: 0 }
+        failures:
+          type: array
+          items: { $ref: "#/components/schemas/BulkWorkflowFailure" }
+    SyncRun:
+      type: object
+      required: [id, platform, status, records_processed, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        platform: { $ref: "#/components/schemas/Platform" }
+        status: { type: string, enum: [pending, running, succeeded, failed] }
+        records_processed: { type: integer, minimum: 0 }
+        error_summary: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SyncSummary:
+      type: object
+      required: [accounts, campaigns, pages, pixels]
+      properties:
+        accounts: { type: integer, minimum: 0 }
+        campaigns: { type: integer, minimum: 0 }
+        pages: { type: integer, minimum: 0 }
+        pixels: { type: integer, minimum: 0 }
+        warnings:
+          type: array
+          items: { type: string }

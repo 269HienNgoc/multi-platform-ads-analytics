@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"regexp"
@@ -15,6 +17,7 @@ import (
 const (
 	requestIDHeader = "X-Request-ID"
 	requestIDKey    = "request_id"
+	apiKeyHeader    = "X-API-Key"
 )
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
@@ -51,6 +54,27 @@ func requestMiddleware(logger *zap.Logger) gin.HandlerFunc {
 			zap.Int("status", c.Writer.Status()),
 			zap.Duration("duration", time.Since(started)),
 		)
+	}
+}
+
+func apiKeyMiddleware(expected string) gin.HandlerFunc {
+	expectedDigest := sha256.Sum256([]byte(expected))
+	return func(c *gin.Context) {
+		if expected == "" {
+			c.Next()
+
+			return
+		}
+		provided := c.GetHeader(apiKeyHeader)
+		providedDigest := sha256.Sum256([]byte(provided))
+		if subtle.ConstantTimeCompare(providedDigest[:], expectedDigest[:]) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": gin.H{"code": "unauthorized", "message": "authentication required"},
+			})
+
+			return
+		}
+		c.Next()
 	}
 }
 

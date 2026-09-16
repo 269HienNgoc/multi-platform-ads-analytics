@@ -50,6 +50,7 @@ The default endpoints are:
 
 - `GET /health/live` — process liveness.
 - `GET /health/ready` — PostgreSQL readiness.
+- `GET /api/v1/ad-accounts` — list normalized accounts and campaign counts.
 - `POST /api/v1/ad-accounts` — create an advertising account.
 - `POST /api/v1/campaigns` — create a campaign.
 - `POST /api/v1/ad-groups` — create an ad group/ad set.
@@ -60,6 +61,9 @@ The default endpoints are:
 - `POST /api/v1/workflows/bulk` — create one workflow per selected account.
 - `POST /api/v1/workflows/{workflowID}/transition` — apply a valid state transition.
 - `POST /api/v1/workflows/{workflowID}/metrics` — record metrics and advance a completed seed campaign.
+- `GET /api/v1/connectors/meta` — read Meta connector status.
+- `POST /api/v1/connectors/meta/sync` — run a read-only Meta account/campaign sync.
+- `GET /api/v1/connectors/meta/sync-runs` — list recent Meta sync attempts.
 
 Example account request:
 
@@ -76,10 +80,13 @@ Create a workflow after creating an account:
 ```bash
 curl -X POST http://127.0.0.1:8080/api/v1/workflows/bulk \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: local-test-001" \
   -d '{"organization_id":"local-testing","ad_account_ids":["ACCOUNT_UUID"],"page_external_id":"PAGE_ID","seed_spend_limit_usd":10}'
 ```
 
 Workflow state and metrics are durable in PostgreSQL. Provider publish and budget operations remain fail-closed until validation and approval guardrails are implemented.
+
+In production, configure `ADS_SERVER_API_KEY` and send it as `X-API-Key` for every `/api/v1/*` request. To enable the read-only Meta connector, set `ADS_META_ENABLED=true`, `ADS_META_ACCESS_TOKEN`, and the required version/base URL values. Never commit tokens.
 
 ## Database migrations
 

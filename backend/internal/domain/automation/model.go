@@ -53,6 +53,7 @@ func (s WorkflowState) IsValid() bool {
 // CampaignWorkflow tracks one independent automation flow per advertising account.
 type CampaignWorkflow struct {
 	ID                     string        `json:"id"`
+	RequestKey             string        `json:"request_key"`
 	OrganizationID         string        `json:"organization_id"`
 	AdAccountID            string        `json:"ad_account_id"`
 	PageExternalID         string        `json:"page_external_id"`

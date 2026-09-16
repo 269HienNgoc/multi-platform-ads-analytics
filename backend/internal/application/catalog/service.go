@@ -25,12 +25,26 @@ var ErrConflict = errors.New("catalog: conflict")
 
 // Store is the persistence contract consumed by the catalog use cases.
 type Store interface {
+	ListAccounts(context.Context) ([]ads.AdAccount, error)
 	CreateAccount(context.Context, *ads.AdAccount) error
 	CreateCampaign(context.Context, *ads.Campaign) error
 	CreateAdGroup(context.Context, *ads.AdGroup) error
 	CreateAd(context.Context, *ads.Ad) error
 	CreateCreative(context.Context, *ads.Creative) error
 	AccountHierarchy(context.Context, string) (ads.AccountHierarchy, error)
+}
+
+// ListAccounts returns all advertising accounts in stable platform/name order.
+func (s *Service) ListAccounts(ctx context.Context) ([]ads.AdAccount, error) {
+	accounts, err := s.store.ListAccounts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing accounts: %w", err)
+	}
+	if accounts == nil {
+		return []ads.AdAccount{}, nil
+	}
+
+	return accounts, nil
 }
 
 // Service implements catalog use cases independently of transport and persistence.
@@ -59,16 +73,16 @@ func (s *Service) CreateAccount(ctx context.Context, account ads.AdAccount) (ads
 	if !account.Platform.IsValid() {
 		return ads.AdAccount{}, invalidField("platform")
 	}
-	if account.ExternalID == "" {
+	if !hasValidLength(account.ExternalID, 255) {
 		return ads.AdAccount{}, invalidField("external_id")
 	}
-	if account.Name == "" {
+	if !hasValidLength(account.Name, 255) {
 		return ads.AdAccount{}, invalidField("name")
 	}
 	if len(account.Currency) != 3 {
 		return ads.AdAccount{}, invalidField("currency")
 	}
-	if account.Timezone == "" {
+	if !hasValidLength(account.Timezone, 100) {
 		return ads.AdAccount{}, invalidField("timezone")
 	}
 	if !account.Status.IsValid() {
@@ -97,14 +111,17 @@ func (s *Service) CreateCampaign(ctx context.Context, campaign ads.Campaign) (ad
 	if !isUUID(campaign.AccountID) {
 		return ads.Campaign{}, invalidField("account_id")
 	}
-	if campaign.ExternalID == "" {
+	if !hasValidLength(campaign.ExternalID, 255) {
 		return ads.Campaign{}, invalidField("external_id")
 	}
-	if campaign.Name == "" {
+	if !hasValidLength(campaign.Name, 255) {
 		return ads.Campaign{}, invalidField("name")
 	}
 	if !campaign.Status.IsValid() {
 		return ads.Campaign{}, invalidField("status")
+	}
+	if len(campaign.Objective) > 100 {
+		return ads.Campaign{}, invalidField("objective")
 	}
 	if err := s.store.CreateCampaign(ctx, &campaign); err != nil {
 		return ads.Campaign{}, fmt.Errorf("creating campaign: %w", err)
@@ -128,10 +145,10 @@ func (s *Service) CreateAdGroup(ctx context.Context, group ads.AdGroup) (ads.AdG
 	if !isUUID(group.CampaignID) {
 		return ads.AdGroup{}, invalidField("campaign_id")
 	}
-	if group.ExternalID == "" {
+	if !hasValidLength(group.ExternalID, 255) {
 		return ads.AdGroup{}, invalidField("external_id")
 	}
-	if group.Name == "" {
+	if !hasValidLength(group.Name, 255) {
 		return ads.AdGroup{}, invalidField("name")
 	}
 	if !group.Status.IsValid() {
@@ -159,10 +176,10 @@ func (s *Service) CreateAd(ctx context.Context, ad ads.Ad) (ads.Ad, error) {
 	if !isUUID(ad.AdGroupID) {
 		return ads.Ad{}, invalidField("ad_group_id")
 	}
-	if ad.ExternalID == "" {
+	if !hasValidLength(ad.ExternalID, 255) {
 		return ads.Ad{}, invalidField("external_id")
 	}
-	if ad.Name == "" {
+	if !hasValidLength(ad.Name, 255) {
 		return ads.Ad{}, invalidField("name")
 	}
 	if !ad.Status.IsValid() {
@@ -192,13 +209,13 @@ func (s *Service) CreateCreative(ctx context.Context, creative ads.Creative) (ad
 	if !isUUID(creative.AdID) {
 		return ads.Creative{}, invalidField("ad_id")
 	}
-	if creative.ExternalID == "" {
+	if !hasValidLength(creative.ExternalID, 255) {
 		return ads.Creative{}, invalidField("external_id")
 	}
-	if creative.Name == "" {
+	if !hasValidLength(creative.Name, 255) {
 		return ads.Creative{}, invalidField("name")
 	}
-	if creative.Format == "" {
+	if !hasValidLength(creative.Format, 50) {
 		return ads.Creative{}, invalidField("format")
 	}
 	if err := s.store.CreateCreative(ctx, &creative); err != nil {
@@ -229,6 +246,10 @@ func normalizedProviderData(data ads.ProviderData) ads.ProviderData {
 	}
 
 	return data
+}
+
+func hasValidLength(value string, maximum int) bool {
+	return value != "" && len(value) <= maximum
 }
 
 func invalidField(field string) error {

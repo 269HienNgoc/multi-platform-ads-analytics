@@ -4,7 +4,10 @@ Campaign automation creates one durable workflow per advertising account. The co
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SEED_PENDING
+    [*] --> ACCOUNT_CONNECTED
+    ACCOUNT_CONNECTED --> ASSETS_SYNCED
+    ASSETS_SYNCED --> PREFLIGHT_PASSED
+    PREFLIGHT_PASSED --> SEED_PENDING
     SEED_PENDING --> SEED_CREATING
     SEED_CREATING --> SEED_RUNNING
     SEED_RUNNING --> SEED_COMPLETED
@@ -18,6 +21,6 @@ stateDiagram-v2
 
 Metrics and state changes share a PostgreSQL transaction. When seed spend reaches its configured threshold, the service validates both required transitions and stores the final `MAIN_PENDING` state atomically.
 
-The Meta adapter can read visible accounts and pause a named campaign. Campaign creation and budget mutation intentionally return `ErrNotImplemented` until deterministic validation, approval, idempotency, and audit-log guardrails are available.
+The Meta adapter cursor-paginates visible accounts and campaigns, and can pause a named campaign. A durable worker performs read-only sync immediately at startup and then on the configured interval. Campaign creation and budget mutation intentionally return `ErrNotImplemented` until deterministic validation, approval, idempotency, and audit-log guardrails are available.
 
-The API currently supports workflow creation, listing, explicit transitions, and metric ingestion. Background workers, connector credential management, automation-rule CRUD, and tenant authorization remain future boundaries.
+The API currently supports workflow creation, listing, explicit transitions, metric ingestion, Meta sync status, manual sync, and sync history. Connector credential management, automation-rule CRUD, and tenant authorization remain future boundaries.

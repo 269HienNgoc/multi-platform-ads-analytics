@@ -39,14 +39,23 @@ func (l *gormLogger) Error(_ context.Context, _ string, _ ...any) {}
 
 func (l *gormLogger) Trace(_ context.Context, started time.Time, query func() (string, int64), err error) {
 	elapsed := time.Since(started)
+	_, rows := query()
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if l.level >= gormlogger.Error {
+			l.logger.Error(
+				"database query failed",
+				zap.Duration("duration", elapsed),
+				zap.Int64("rows", rows),
+				zap.Error(err),
+			)
+		}
+
 		return
 	}
 	if elapsed < l.slowThreshold || l.level < gormlogger.Warn {
 		return
 	}
 
-	_, rows := query()
 	l.logger.Warn(
 		"slow database query",
 		zap.Duration("duration", elapsed),

@@ -9,7 +9,9 @@ export interface AdAccount {
   currency: string;
   timezone: string;
   status: EntityStatus;
+  campaign_count: number;
   provider_data: Record<string, unknown>;
+  last_synced_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +56,7 @@ export type WorkflowState =
 
 export interface CampaignWorkflow {
   id: string;
+  request_key: string;
   organization_id: string;
   ad_account_id: string;
   page_external_id: string;
@@ -82,4 +85,44 @@ export interface CreateBulkWorkflowInput {
 export interface BulkWorkflowResponse {
   data: CampaignWorkflow[];
   count: number;
+  failures: Array<{
+    ad_account_id: string;
+    code: string;
+    message: string;
+  }>;
+}
+
+export interface AdAccountListResponse {
+  data: AdAccount[];
+}
+
+export interface MetaConnectorStatusResponse {
+  data: {
+    platform: "meta";
+    enabled: boolean;
+    mode: "read_only";
+  };
+}
+
+export interface ProviderSyncRun {
+  id: string;
+  platform: Platform;
+  status: "pending" | "running" | "succeeded" | "failed";
+  records_processed: number;
+  error_summary?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetaSyncResponse {
+  data: ProviderSyncRun;
+  summary: {
+    accounts: number;
+    campaigns: number;
+    pages: number;
+    pixels: number;
+    warnings?: string[];
+  };
 }

@@ -33,16 +33,18 @@ type ProviderData map[string]any
 
 // AdAccount is a provider-neutral advertising account.
 type AdAccount struct {
-	ID           string
-	Platform     Platform
-	ExternalID   string
-	Name         string
-	Currency     string
-	Timezone     string
-	Status       Status
-	ProviderData ProviderData
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID            string
+	Platform      Platform
+	ExternalID    string
+	Name          string
+	Currency      string
+	Timezone      string
+	Status        Status
+	CampaignCount int64
+	ProviderData  ProviderData
+	LastSyncedAt  *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Campaign is a campaign owned by one advertising account.
@@ -54,6 +56,7 @@ type Campaign struct {
 	Objective    string
 	Status       Status
 	ProviderData ProviderData
+	LastSyncedAt *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

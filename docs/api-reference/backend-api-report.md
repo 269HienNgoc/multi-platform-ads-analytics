@@ -1,7 +1,7 @@
 # Báo cáo API backend
 
-Ngày rà soát: 15/09/2026  
-Phiên bản API: `v1`  
+Ngày rà soát: 16/09/2026
+Phiên bản API: `v1`
 Base URL local: `http://127.0.0.1:8080`
 
 ## 1. Tóm tắt hiện trạng
@@ -12,7 +12,7 @@ Backend hiện đã cung cấp nền tảng cho danh mục quảng cáo đa nề
 
 API đang chạy trên Gin, dữ liệu được lưu bằng GORM/PostgreSQL, cấu hình đọc từ YAML qua Viper và log có cấu trúc bằng Zap. Mã định danh nội bộ là UUID; mã của Meta, TikTok hoặc Google chỉ được lưu trong `external_id`.
 
-Hiện có **12 endpoint**: 2 endpoint kiểm tra sức khỏe, 6 endpoint tạo dữ liệu, 3 endpoint thao tác workflow và 1 endpoint đọc toàn bộ cây dữ liệu của một tài khoản.
+Hiện có **16 operation**: 2 operation kiểm tra sức khỏe, 7 operation catalog, 4 operation workflow và 3 operation connector Meta. Connector Meta hiện cố ý chạy ở chế độ **read-only**: đồng bộ tài khoản/campaign về PostgreSQL, archive các bản ghi do provider quản lý khi chúng biến mất khỏi một lần đọc đầy đủ thành công, nhưng chưa phát hành campaign hoặc thay đổi ngân sách thật.
 
 ## 2. Danh sách endpoint
 
@@ -20,6 +20,7 @@ Hiện có **12 endpoint**: 2 endpoint kiểm tra sức khỏe, 6 endpoint tạo
 | --- | --- | --- | --- |
 | `GET` | `/health/live` | Kiểm tra process API đang chạy | `200` |
 | `GET` | `/health/ready` | Kiểm tra API và PostgreSQL sẵn sàng | `200` |
+| `GET` | `/api/v1/ad-accounts` | Liệt kê tài khoản và số campaign đã đồng bộ | `200` |
 | `POST` | `/api/v1/ad-accounts` | Tạo tài khoản quảng cáo | `201` |
 | `POST` | `/api/v1/campaigns` | Tạo chiến dịch trong tài khoản | `201` |
 | `POST` | `/api/v1/ad-groups` | Tạo nhóm quảng cáo/ad set | `201` |
@@ -30,12 +31,17 @@ Hiện có **12 endpoint**: 2 endpoint kiểm tra sức khỏe, 6 endpoint tạo
 | `POST` | `/api/v1/workflows/bulk` | Tạo một workflow cho mỗi tài khoản đã chọn | `201` |
 | `POST` | `/api/v1/workflows/{workflowID}/transition` | Chuyển trạng thái workflow hợp lệ | `200` |
 | `POST` | `/api/v1/workflows/{workflowID}/metrics` | Ghi metric và tự chuyển Camp mồi đã đủ ngưỡng | `200` |
+| `GET` | `/api/v1/connectors/meta` | Xem trạng thái connector Meta | `200` |
+| `POST` | `/api/v1/connectors/meta/sync` | Đồng bộ mọi Meta account/campaign nhìn thấy | `200` |
+| `GET` | `/api/v1/connectors/meta/sync-runs` | Xem lịch sử đồng bộ | `200` |
 
 ## 3. Quy ước chung
 
 ### Header
 
 - Request gửi JSON cần có `Content-Type: application/json`.
+- Các route `/api/v1/*` yêu cầu `X-API-Key` khi `ADS_SERVER_API_KEY` được cấu hình; production bắt buộc cấu hình khóa này.
+- `POST /workflows/bulk` nhận `Idempotency-Key`. Nếu client không gửi, backend dùng `X-Request-ID` làm khóa cho lần gọi đó.
 - Client có thể gửi `X-Request-ID` gồm 1–64 ký tự chữ, số, `_` hoặc `-`.
 - Nếu `X-Request-ID` không hợp lệ hoặc bị thiếu, backend tự sinh ID mới.
 - Mọi response đều trả lại `X-Request-ID` để tra log.
@@ -65,11 +71,14 @@ Hiện có **12 endpoint**: 2 endpoint kiểm tra sức khỏe, 6 endpoint tạo
 | HTTP | `code` | Khi nào xảy ra |
 | --- | --- | --- |
 | `400` | `invalid_request` | JSON sai, thiếu trường bắt buộc, UUID sai hoặc dữ liệu không hợp lệ |
+| `401` | `unauthorized` | Thiếu hoặc sai `X-API-Key` |
 | `404` | `not_found` | Không tìm thấy entity hoặc entity cha |
 | `409` | `conflict` | Trùng `external_id` trong cùng phạm vi cha |
 | `409` | `invalid_transition` | Yêu cầu chuyển trạng thái workflow không hợp lệ |
 | `500` | `internal_error` | Lỗi ngoài dự kiến; chi tiết chỉ ghi vào Zap log |
 | `503` | Không dùng error envelope | PostgreSQL chưa sẵn sàng ở `/health/ready` |
+| `502` | `provider_sync_failed` | Meta API hoặc bước lưu snapshot thất bại |
+| `503` | `connector_unavailable` | Connector Meta chưa được cấu hình |
 
 ## 4. Chi tiết endpoint
 
@@ -150,6 +159,10 @@ Response `201`:
 ```
 
 Phạm vi chống trùng: `platform + external_id`.
+
+### `GET /api/v1/ad-accounts`
+
+Trả `{"data":[...]}` theo thứ tự platform, tên và UUID. Mỗi tài khoản có thêm `campaign_count` và `last_synced_at` để frontend hiển thị dữ liệu đồng bộ thật mà không cần gọi hierarchy cho từng account.
 
 ### `POST /api/v1/campaigns`
 
@@ -299,44 +312,47 @@ Tạo workflow hàng loạt bằng `POST /api/v1/workflows/bulk`:
 }
 ```
 
-Mỗi account tạo một record độc lập ở trạng thái `SEED_PENDING`. `GET /api/v1/workflows` trả `{"data": [...]}`. Chuyển trạng thái bằng body `{"state":"SEED_CREATING"}` tại endpoint `transition`.
+Mỗi account tạo một record độc lập ở trạng thái `ACCOUNT_CONNECTED`; hệ thống không giả định Page/Pixel/payment đã qua preflight. Một account lỗi không rollback account khác; response dùng `207 Multi-Status` và mảng `failures` nếu chỉ thành công một phần. Retry cùng `organization_id + Idempotency-Key + ad_account_id` trả lại workflow đã tạo thay vì tạo trùng. `GET /api/v1/workflows` trả `{"data": [...]}`. Chuyển trạng thái bằng body `{"state":"ASSETS_SYNCED"}` tại endpoint `transition`.
 
 Endpoint `metrics` nhận `spend_usd`, `registrations`, `deposits`, `cost_per_registration`, `cost_per_deposit` và `captured_at`. Nếu workflow đang `SEED_RUNNING` và `spend_usd` đạt `seed_spend_limit_usd`, backend ghi metric và chuyển nguyên tử sang `MAIN_PENDING`.
 
-## 5. Dữ liệu đã có schema nhưng chưa có API
+### Đồng bộ Meta read-only
+
+Khi `ADS_META_ENABLED=true`, worker chạy ngay lúc khởi động và lặp theo `ADS_META_SYNC_INTERVAL`. Đồng bộ dùng cursor pagination cho tất cả ad account, sau đó lấy campaign của từng account, upsert theo external ID và lưu raw payload để audit. Thiếu quyền Page hoặc Pixel được trả về dưới dạng cảnh báo và không làm mất kết quả Account/Campaign.
+
+Các thao tác tạo campaign, thay ngân sách và đọc insight vẫn fail-closed cho đến khi có preflight, approval và budget guardrail.
+
+## 5. Dữ liệu đã có schema nhưng chưa có API đầy đủ
 
 Migration PostgreSQL đã tạo các bảng sau nhưng router hiện chưa expose endpoint tương ứng:
 
 - `performance_metrics_daily`: impression, reach, click, conversion, spend, revenue và metric riêng của provider theo ngày.
-- `sync_runs`: trạng thái đồng bộ, cursor, số record đã xử lý và lỗi.
-- `raw_provider_payloads`: payload gốc có hash chống trùng để phục vụ audit và AI.
+- `raw_provider_payloads`: payload gốc có hash chống trùng để phục vụ audit và AI; đây là dữ liệu nội bộ, không expose ra API.
 - `automation_rules`: rule định lượng có ngưỡng chi tiêu/mẫu; domain evaluator đã có nhưng chưa expose CRUD API.
 
-Các bảng catalog cũng có `last_synced_at`, nhưng response hiện tại chưa trả trường này.
+`sync_runs` đã có API đọc riêng cho Meta. Chưa có API tổng hợp lịch sử sync đa nền tảng.
 
 ## 6. Khả năng dùng cho frontend hiện tại
 
 | Nhu cầu giao diện | Backend hiện tại | Cách xử lý ở frontend giai đoạn đầu |
 | --- | --- | --- |
-| Hiển thị trạng thái hệ thống | Đủ | Gọi `/health/ready` qua Next.js rewrite |
+| Hiển thị trạng thái hệ thống | Đủ | Gọi `/health/ready` qua Next.js Route Handler |
 | Thêm tài khoản quảng cáo | Đủ | Gọi `POST /ad-accounts` |
 | Xem một cây tài khoản | Đủ khi đã biết UUID | Gọi endpoint `hierarchy` |
-| Danh sách tất cả tài khoản | Chưa có | Dùng dữ liệu demo có nhãn rõ ràng |
+| Danh sách tất cả tài khoản | Đủ | Gọi `GET /ad-accounts`; frontend đang dùng dữ liệu thật |
 | Dashboard KPI/biểu đồ | Chưa có API đọc metric | Dùng dữ liệu demo có nhãn rõ ràng |
-| Cấu hình hàng loạt nhiều tài khoản | Đủ cho workflow foundation | Dashboard gửi lệnh thật sau khi tạo account backend |
+| Cấu hình hàng loạt nhiều tài khoản | Đủ cho workflow foundation | Có partial success và idempotency; chưa publish campaign thật |
 | Bật/tắt/sửa/xóa campaign | Chưa có | Chỉ hiển thị trạng thái, không giả lập thao tác ghi |
-| Đăng nhập và phân quyền | Chưa có | Không public backend ra internet |
+| Đăng nhập và phân quyền | Một lớp vận hành | Go API dùng API key; Next dashboard dùng HTTP Basic ở production. Chưa có RBAC/tenant identity |
 
 ## 7. Khoảng trống cần ưu tiên ở backend
 
-1. Thêm authentication, authorization và tenant/workspace trước khi public API.
-2. Thêm `GET /ad-accounts` có phân trang, filter platform/status và tìm kiếm.
-3. Thêm API tổng hợp dashboard theo khoảng ngày và timezone.
-4. Thêm API đọc campaign/ad group/ad theo danh sách thay vì chỉ đọc toàn bộ hierarchy.
-5. Thêm idempotency key, batch job và worker cho quy trình Camp mồi → Conversion → Scale.
-6. Thêm API quản lý connector, token và lịch đồng bộ; tuyệt đối không trả access token về frontend.
-7. Thêm CORS nếu frontend gọi backend trực tiếp. Bản frontend hiện dùng Next.js rewrite nên local development chưa cần CORS.
-8. Bổ sung OpenAPI vào CI để phát hiện thay đổi contract làm hỏng frontend.
+1. Thêm identity, RBAC và tenant/workspace thực sự trước khi mở cho nhiều khách hàng.
+2. Thêm phân trang, filter platform/status và tìm kiếm server-side cho `GET /ad-accounts`.
+3. Thêm API tổng hợp dashboard theo khoảng ngày và timezone; KPI hiện vẫn là dữ liệu mô phỏng.
+4. Hoàn thiện Meta preflight, approval, budget guardrail và publish orchestration trước khi bật tạo campaign thật.
+5. Thêm API đọc campaign/ad group/ad theo danh sách thay vì chỉ đọc toàn bộ hierarchy.
+6. Bổ sung OpenAPI breaking-change check và integration test PostgreSQL trong CI.
 
 ## 8. Bảo mật và vận hành
 

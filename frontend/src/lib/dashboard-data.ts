@@ -38,57 +38,6 @@ export const performanceSeries = [
   { day: "15/09", spend: 16.1, revenue: 55.3 },
 ];
 
-export const initialAccounts: DashboardAccount[] = [
-  {
-    id: "demo-1",
-    name: "Bloom Skincare VN",
-    platform: "meta",
-    externalID: "act_8902…481",
-    status: "Đang chạy",
-    campaigns: 8,
-    spend: "₫46,8M",
-    roas: "4,12",
-    change: "+18%",
-    phase: "Scale",
-  },
-  {
-    id: "demo-2",
-    name: "Luna Home Official",
-    platform: "tiktok",
-    externalID: "72814…029",
-    status: "Cần xử lý",
-    campaigns: 5,
-    spend: "₫31,2M",
-    roas: "1,84",
-    change: "−22%",
-    phase: "Conversion",
-  },
-  {
-    id: "demo-3",
-    name: "Nội thất Mộc",
-    platform: "google",
-    externalID: "432-901-7762",
-    status: "Đang chạy",
-    campaigns: 4,
-    spend: "₫28,6M",
-    roas: "3,48",
-    change: "+7%",
-    phase: "Conversion",
-  },
-  {
-    id: "demo-4",
-    name: "Sách nhỏ mỗi ngày",
-    platform: "meta",
-    externalID: "act_1740…205",
-    status: "Tạm dừng",
-    campaigns: 3,
-    spend: "₫12,4M",
-    roas: "2,06",
-    change: "0%",
-    phase: "Camp mồi",
-  },
-];
-
 export const tasks = [
   {
     title: "ROAS giảm 22%",

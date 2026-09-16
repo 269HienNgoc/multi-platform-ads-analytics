@@ -16,7 +16,7 @@ type automationService interface {
 	CreateBulk(
 		context.Context,
 		applicationautomation.CreateBulkInput,
-	) ([]automationdomain.CampaignWorkflow, error)
+	) (applicationautomation.CreateBulkResult, error)
 	Transition(
 		context.Context,
 		string,
@@ -68,7 +68,12 @@ func (h *automationHandler) createBulkWorkflows(c *gin.Context) {
 	if !bindJSON(c, &request) {
 		return
 	}
+	requestKey := c.GetHeader("Idempotency-Key")
+	if requestKey == "" {
+		requestKey = requestID(c)
+	}
 	created, err := h.service.CreateBulk(c.Request.Context(), applicationautomation.CreateBulkInput{
+		RequestKey:     requestKey,
 		OrganizationID: request.OrganizationID, AdAccountIDs: request.AdAccountIDs,
 		PageExternalID: request.PageExternalID, PixelExternalID: request.PixelExternalID,
 		PixelEvent: request.PixelEvent, ExistingPostID: request.ExistingPostID,
@@ -79,8 +84,15 @@ func (h *automationHandler) createBulkWorkflows(c *gin.Context) {
 
 		return
 	}
+	if len(created.Failures) > 0 {
+		c.JSON(http.StatusMultiStatus, gin.H{
+			"data": created.Workflows, "count": len(created.Workflows), "failures": created.Failures,
+		})
 
-	c.JSON(http.StatusCreated, gin.H{"data": created, "count": len(created)})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"data": created.Workflows, "count": len(created.Workflows), "failures": created.Failures})
 }
 
 func (h *automationHandler) transitionWorkflow(c *gin.Context) {

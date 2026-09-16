@@ -16,6 +16,7 @@ var _ applicationautomation.Store = (*AutomationStore)(nil)
 
 type workflowRecord struct {
 	ID                     string    `gorm:"column:id;type:uuid;primaryKey"`
+	RequestKey             string    `gorm:"column:request_key"`
 	OrganizationID         string    `gorm:"column:organization_id"`
 	AdAccountID            string    `gorm:"column:ad_account_id;type:uuid"`
 	PageExternalID         string    `gorm:"column:page_external_id"`
@@ -71,26 +72,40 @@ func (s *AutomationStore) List(ctx context.Context) ([]automationdomain.Campaign
 	return workflows, nil
 }
 
-// CreateBulk persists all requested workflows atomically.
-func (s *AutomationStore) CreateBulk(
+// Create persists one account workflow and returns the prior row for a repeated request key.
+func (s *AutomationStore) Create(
 	ctx context.Context,
-	workflows []automationdomain.CampaignWorkflow,
-) error {
-	records := make([]workflowRecord, 0, len(workflows))
-	for _, workflow := range workflows {
-		records = append(records, workflowFromDomain(workflow))
+	workflow automationdomain.CampaignWorkflow,
+) (automationdomain.CampaignWorkflow, error) {
+	record := workflowFromDomain(workflow)
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "organization_id"},
+			{Name: "request_key"},
+			{Name: "ad_account_id"},
+		},
+		DoNothing: true,
+	}).Create(&record)
+	if result.Error != nil {
+		return automationdomain.CampaignWorkflow{}, translateAutomationWriteError(result.Error)
 	}
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&records).Error; err != nil {
-			return translateAutomationWriteError(err)
-		}
-
-		return nil
-	}); err != nil {
-		return err
+	if result.RowsAffected == 1 {
+		return workflow, nil
 	}
 
-	return nil
+	var existing workflowRecord
+	if err := s.db.WithContext(ctx).
+		Where(
+			"organization_id = ? AND request_key = ? AND ad_account_id = ?",
+			workflow.OrganizationID,
+			workflow.RequestKey,
+			workflow.AdAccountID,
+		).
+		Take(&existing).Error; err != nil {
+		return automationdomain.CampaignWorkflow{}, translateAutomationReadError(err)
+	}
+
+	return workflowToDomain(existing), nil
 }
 
 // Update locks one workflow, applies domain logic, and persists the result atomically.
@@ -133,7 +148,10 @@ func (s *AutomationStore) change(
 		workflow.UpdatedAt = time.Now().UTC()
 		if metrics != nil {
 			metricRecord := metricFromDomain(id, *metrics)
-			if err := tx.Create(&metricRecord).Error; err != nil {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "workflow_id"}, {Name: "captured_at"}},
+				DoNothing: true,
+			}).Create(&metricRecord).Error; err != nil {
 				return fmt.Errorf("persisting campaign workflow metrics: %w", err)
 			}
 		}
@@ -161,7 +179,8 @@ func (s *AutomationStore) change(
 
 func workflowFromDomain(workflow automationdomain.CampaignWorkflow) workflowRecord {
 	return workflowRecord{
-		ID: workflow.ID, OrganizationID: workflow.OrganizationID, AdAccountID: workflow.AdAccountID,
+		ID: workflow.ID, RequestKey: workflow.RequestKey,
+		OrganizationID: workflow.OrganizationID, AdAccountID: workflow.AdAccountID,
 		PageExternalID: workflow.PageExternalID, PixelExternalID: workflow.PixelExternalID,
 		PixelEvent: workflow.PixelEvent, ExistingPostID: workflow.ExistingPostID,
 		SeedCampaignExternalID: workflow.SeedCampaignExternalID,
@@ -173,7 +192,8 @@ func workflowFromDomain(workflow automationdomain.CampaignWorkflow) workflowReco
 
 func workflowToDomain(record workflowRecord) automationdomain.CampaignWorkflow {
 	return automationdomain.CampaignWorkflow{
-		ID: record.ID, OrganizationID: record.OrganizationID, AdAccountID: record.AdAccountID,
+		ID: record.ID, RequestKey: record.RequestKey,
+		OrganizationID: record.OrganizationID, AdAccountID: record.AdAccountID,
 		PageExternalID: record.PageExternalID, PixelExternalID: record.PixelExternalID,
 		PixelEvent: record.PixelEvent, ExistingPostID: record.ExistingPostID,
 		SeedCampaignExternalID: record.SeedCampaignExternalID,

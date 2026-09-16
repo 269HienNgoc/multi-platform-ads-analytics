@@ -1,10 +1,13 @@
 import type {
   AdAccount,
+  AdAccountListResponse,
   APIErrorResponse,
   BulkWorkflowResponse,
   CreateAdAccountInput,
   CreateBulkWorkflowInput,
   HealthResponse,
+  MetaConnectorStatusResponse,
+  MetaSyncResponse,
 } from "@/types/ads";
 
 export class APIRequestError extends Error {
@@ -56,9 +59,22 @@ export function createAdAccount(input: CreateAdAccountInput) {
   });
 }
 
-export function createBulkWorkflows(input: CreateBulkWorkflowInput) {
+export function listAdAccounts(signal?: AbortSignal) {
+  return request<AdAccountListResponse>("/api/v1/ad-accounts", { signal });
+}
+
+export function getMetaConnectorStatus(signal?: AbortSignal) {
+  return request<MetaConnectorStatusResponse>("/api/v1/connectors/meta", { signal });
+}
+
+export function syncMeta() {
+  return request<MetaSyncResponse>("/api/v1/connectors/meta/sync", { method: "POST" });
+}
+
+export function createBulkWorkflows(input: CreateBulkWorkflowInput, idempotencyKey: string) {
   return request<BulkWorkflowResponse>("/api/v1/workflows/bulk", {
     method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify(input),
   });
 }

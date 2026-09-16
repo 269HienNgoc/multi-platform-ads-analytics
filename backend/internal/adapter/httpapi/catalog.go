@@ -15,6 +15,7 @@ import (
 const maxJSONBodyBytes = 1 << 20
 
 type catalogService interface {
+	ListAccounts(context.Context) ([]ads.AdAccount, error)
 	CreateAccount(context.Context, ads.AdAccount) (ads.AdAccount, error)
 	CreateCampaign(context.Context, ads.Campaign) (ads.Campaign, error)
 	CreateAdGroup(context.Context, ads.AdGroup) (ads.AdGroup, error)
@@ -73,16 +74,18 @@ type createCreativeRequest struct {
 }
 
 type accountResponse struct {
-	ID           string           `json:"id"`
-	Platform     ads.Platform     `json:"platform"`
-	ExternalID   string           `json:"external_id"`
-	Name         string           `json:"name"`
-	Currency     string           `json:"currency"`
-	Timezone     string           `json:"timezone"`
-	Status       ads.Status       `json:"status"`
-	ProviderData ads.ProviderData `json:"provider_data"`
-	CreatedAt    time.Time        `json:"created_at"`
-	UpdatedAt    time.Time        `json:"updated_at"`
+	ID            string           `json:"id"`
+	Platform      ads.Platform     `json:"platform"`
+	ExternalID    string           `json:"external_id"`
+	Name          string           `json:"name"`
+	Currency      string           `json:"currency"`
+	Timezone      string           `json:"timezone"`
+	Status        ads.Status       `json:"status"`
+	CampaignCount int64            `json:"campaign_count"`
+	ProviderData  ads.ProviderData `json:"provider_data"`
+	LastSyncedAt  *time.Time       `json:"last_synced_at,omitempty"`
+	CreatedAt     time.Time        `json:"created_at"`
+	UpdatedAt     time.Time        `json:"updated_at"`
 }
 
 type campaignResponse struct {
@@ -93,6 +96,7 @@ type campaignResponse struct {
 	Objective    string           `json:"objective"`
 	Status       ads.Status       `json:"status"`
 	ProviderData ads.ProviderData `json:"provider_data"`
+	LastSyncedAt *time.Time       `json:"last_synced_at,omitempty"`
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 }
@@ -153,6 +157,21 @@ type adNodeResponse struct {
 
 func newCatalogHandler(service catalogService, logger *zap.Logger) *catalogHandler {
 	return &catalogHandler{service: service, logger: logger}
+}
+
+func (h *catalogHandler) listAccounts(c *gin.Context) {
+	accounts, err := h.service.ListAccounts(c.Request.Context())
+	if err != nil {
+		h.writeError(c, err)
+
+		return
+	}
+	response := make([]accountResponse, 0, len(accounts))
+	for _, account := range accounts {
+		response = append(response, accountToResponse(account))
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": response})
 }
 
 func (h *catalogHandler) createAccount(c *gin.Context) {
@@ -292,8 +311,10 @@ func accountToResponse(account ads.AdAccount) accountResponse {
 	return accountResponse{
 		ID: account.ID, Platform: account.Platform, ExternalID: account.ExternalID,
 		Name: account.Name, Currency: account.Currency, Timezone: account.Timezone,
-		Status: account.Status, ProviderData: account.ProviderData,
-		CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt,
+		Status: account.Status, CampaignCount: account.CampaignCount,
+		ProviderData: account.ProviderData,
+		LastSyncedAt: account.LastSyncedAt,
+		CreatedAt:    account.CreatedAt, UpdatedAt: account.UpdatedAt,
 	}
 }
 
@@ -302,6 +323,7 @@ func campaignToResponse(campaign ads.Campaign) campaignResponse {
 		ID: campaign.ID, AccountID: campaign.AccountID, ExternalID: campaign.ExternalID,
 		Name: campaign.Name, Objective: campaign.Objective, Status: campaign.Status,
 		ProviderData: campaign.ProviderData, CreatedAt: campaign.CreatedAt, UpdatedAt: campaign.UpdatedAt,
+		LastSyncedAt: campaign.LastSyncedAt,
 	}
 }
 
